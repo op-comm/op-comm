@@ -1,0 +1,13 @@
+.PHONY: test cleanup build
+
+all: test cleanup build
+
+test:
+	go test -v -race ./...
+
+cleanup:
+	go mod tidy
+	go fmt ./...
+	go vet ./...
+build:
+	go build ./...
