@@ -4,10 +4,12 @@ type Event struct {
 }
 
 type ClientSentEvent struct {
-	eventType string
-	data      interface{}
+	EventType string
+	Data      interface{}
 }
 
 type ServerSentEvent struct {
 	ClientSentEvent
+	//metadata returned to client can be added here:
+
 }
