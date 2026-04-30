@@ -2,12 +2,12 @@ package server
 
 import "context"
 
-//TODO: create event struct
+// TODO: create event struct
 // define in protocol / type package
 // it should be accessible to future client packages aswell
-type Event struct {}
+type Event struct{}
 
-type Session struct {}
+type Session struct{}
 
 type Manager struct {
 	InboundBuffer chan *Event
@@ -22,10 +22,10 @@ type Manager struct {
 	clientIDMethod func() string
 }
 
-func NewManager() *Manager{
-	return &Manager {
+func NewManager() *Manager {
+	return &Manager{
 		InboundBuffer: make(chan *Event),
-		sessions: make(map[string]*Session),
+		sessions:      make(map[string]*Session),
 		clientIDMethod: func() string {
 			//TODO: implement UUID?
 			return ""
@@ -40,17 +40,16 @@ func (manager *Manager) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case inboundEvent := <- manager.InboundBuffer:
+		case inboundEvent := <-manager.InboundBuffer:
 			manager.handleEvent(*inboundEvent)
 		}
 	}
 }
 
-
-func (manager *Manager) handleEvent(event Event){
+func (manager *Manager) handleEvent(event Event) {
 	//TODO: process events
 }
 
-func(manager *Manager) cleanup(){
+func (manager *Manager) cleanup() {
 	//TODO: implement cleanup process
 }
