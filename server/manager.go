@@ -1,16 +1,16 @@
 package server
 
-import "context"
+import (
+	"context"
 
-// TODO: create event struct
-// define in protocol / type package
-// it should be accessible to future client packages aswell
-type Event struct{}
+	"github.com/op-comm/op-comm/protocol"
+)
+
 
 type Session struct{}
 
 type Manager struct {
-	InboundBuffer chan *Event
+	InboundBuffer chan *protocol.ClientSentEvent
 	//TODO: store the clients connected to the manager
 	// so we can properly handle messages between clients
 	// these can be represented as "sessions" each session
@@ -24,7 +24,7 @@ type Manager struct {
 
 func NewManager() *Manager {
 	return &Manager{
-		InboundBuffer: make(chan *Event),
+		InboundBuffer: make(chan *protocol.ClientSentEvent),
 		sessions:      make(map[string]*Session),
 		clientIDMethod: func() string {
 			//TODO: implement UUID?
@@ -33,7 +33,7 @@ func NewManager() *Manager {
 	}
 }
 
-// Handles the main loop, ends with the context and will simply just handle every inbound event
+// ends with the context and will simply just handle every inbound event
 func (manager *Manager) Run(ctx context.Context) {
 	defer manager.cleanup()
 	for {
@@ -46,7 +46,7 @@ func (manager *Manager) Run(ctx context.Context) {
 	}
 }
 
-func (manager *Manager) handleEvent(event Event) {
+func (manager *Manager) handleEvent(event protocol.ClientSentEvent) {
 	//TODO: process events
 }
 
