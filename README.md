@@ -33,7 +33,7 @@ make test
 make cleanup
 ```
 
-this should be ran before every commit
+This should be run before every commit
 
 ## License
 
