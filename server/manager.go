@@ -6,7 +6,6 @@ import (
 	"github.com/op-comm/op-comm/protocol"
 )
 
-
 type Manager struct {
 	InboundBuffer chan *protocol.ClientSentEvent
 	//TODO: store the clients connected to the manager
