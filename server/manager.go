@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"sync"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -11,14 +12,8 @@ import (
 
 type Manager struct {
 	InboundBuffer chan *protocol.ClientSentEvent
-	//TODO: store the clients connected to the manager
-	// so we can properly handle messages between clients
-	// these can be represented as "sessions" each session
-	// is a connected client
-	// the string key should be the session id however that is stored
 	sessions map[string]*Session
-
-	// handles how clients are identified (the key for sessions map)
+	sessionMutex sync.RWMutex
 	clientIDMethod func(*http.Request) string
 }
 
@@ -26,6 +21,7 @@ func NewManager() *Manager {
 	return &Manager{
 		InboundBuffer: make(chan *protocol.ClientSentEvent),
 		sessions:      make(map[string]*Session),
+		sessionMutex: sync.RWMutex{},
 		clientIDMethod: func(request *http.Request) string {
 			return uuid.NewString()
 		},
@@ -59,11 +55,11 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	clientID := manager.clientIDMethod(request)
 	clientSession := NewSession(clientID, connection, manager)
 
-	//TODO: add session to manager map
+	manager.addSession(clientSession)
 
 	go clientSession.HandleOutboundEventsFromManager()
-	// since each request is its own goroutine we can use the current one to handle reading from
-	// the socket
+	// since each request is its own goroutine we can use 
+	// the current one to handle reading from the socket
 	clientSession.SendIncomingEventsToManager()
 }
 
@@ -73,4 +69,35 @@ func (manager *Manager) handleEvent(event protocol.ClientSentEvent) {
 
 func (manager *Manager) cleanup() {
 	//TODO: implement cleanup process
+	
+	manager.sessionMutex.Lock()
+
+	sessionsToClose := make([]*Session, 0, len(manager.sessions))
+	for _, session := range manager.sessions {
+		sessionsToClose = append(sessionsToClose, session)
+	}
+	clear(manager.sessions)
+	
+	manager.sessionMutex.Unlock()
+
+	for _, session := range sessionsToClose{
+		session.Close()
+	}
+
+}
+
+func (manager *Manager) addSession(session *Session){
+	manager.sessionMutex.Lock()
+	defer manager.sessionMutex.Unlock()
+	manager.sessions[session.ID] = session
+}
+
+func (manager *Manager) removeSession(clientID string){
+	manager.sessionMutex.Lock()
+	defer manager.sessionMutex.Unlock()	
+	session, sessionExists := manager.sessions[clientID]
+	if sessionExists{
+		session.Close()
+		delete(manager.sessions, clientID)
+	}
 }
