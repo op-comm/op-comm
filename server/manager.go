@@ -11,9 +11,9 @@ import (
 )
 
 type Manager struct {
-	InboundBuffer chan *protocol.ClientSentEvent
-	sessions map[string]*Session
-	sessionMutex sync.RWMutex
+	InboundBuffer  chan *protocol.ClientSentEvent
+	sessions       map[string]*Session
+	sessionMutex   sync.RWMutex
 	clientIDMethod func(*http.Request) string
 }
 
@@ -21,14 +21,14 @@ func NewManager() *Manager {
 	return &Manager{
 		InboundBuffer: make(chan *protocol.ClientSentEvent),
 		sessions:      make(map[string]*Session),
-		sessionMutex: sync.RWMutex{},
+		sessionMutex:  sync.RWMutex{},
 		clientIDMethod: func(request *http.Request) string {
 			return uuid.NewString()
 		},
 	}
 }
 
-//TODO: replace with functional options pattern?
+// TODO: replace with functional options pattern?
 func (manager *Manager) SetClientIDMethod(method func(request *http.Request) string) {
 	manager.clientIDMethod = method
 }
@@ -58,7 +58,7 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	manager.addSession(clientSession)
 
 	go clientSession.HandleOutboundEventsFromManager()
-	// since each request is its own goroutine we can use 
+	// since each request is its own goroutine we can use
 	// the current one to handle reading from the socket
 	clientSession.SendIncomingEventsToManager()
 }
@@ -69,7 +69,7 @@ func (manager *Manager) handleEvent(event protocol.ClientSentEvent) {
 
 func (manager *Manager) cleanup() {
 	//TODO: implement cleanup process
-	
+
 	manager.sessionMutex.Lock()
 
 	sessionsToClose := make([]*Session, 0, len(manager.sessions))
@@ -77,26 +77,26 @@ func (manager *Manager) cleanup() {
 		sessionsToClose = append(sessionsToClose, session)
 	}
 	clear(manager.sessions)
-	
+
 	manager.sessionMutex.Unlock()
 
-	for _, session := range sessionsToClose{
+	for _, session := range sessionsToClose {
 		session.Close()
 	}
 
 }
 
-func (manager *Manager) addSession(session *Session){
+func (manager *Manager) addSession(session *Session) {
 	manager.sessionMutex.Lock()
 	defer manager.sessionMutex.Unlock()
 	manager.sessions[session.ID] = session
 }
 
-func (manager *Manager) removeSession(clientID string){
+func (manager *Manager) removeSession(clientID string) {
 	manager.sessionMutex.Lock()
-	defer manager.sessionMutex.Unlock()	
+	defer manager.sessionMutex.Unlock()
 	session, sessionExists := manager.sessions[clientID]
-	if sessionExists{
+	if sessionExists {
 		session.Close()
 		delete(manager.sessions, clientID)
 	}

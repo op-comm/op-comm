@@ -28,7 +28,7 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager) *Sessio
 
 func (session *Session) SendIncomingEventsToManager() {
 	for {
-		//TODO: 
+		//TODO:
 		// read socket
 		// transfer into event struct
 		// write to manager input buffer
