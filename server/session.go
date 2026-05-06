@@ -25,3 +25,21 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager) *Sessio
 		OutputBuffer: make(chan protocol.ServerSentEvent, MAX_BUFFER_EVENTS_BEFORE_DISCONNECT),
 	}
 }
+
+func (session *Session) SendIncomingEventsToManager() {
+	for {
+		// read socket
+		// transfer into event struct
+		// write to manager input buffer
+	}
+}
+
+func (session *Session) HandleOutboundEventsFromManager() {
+	for {
+		// write to socket
+	}
+}
+
+func (session *Session) Close() {
+	// close socket connection
+}
