@@ -42,4 +42,5 @@ func (session *Session) HandleOutboundEventsFromManager() {
 
 func (session *Session) Close() {
 	// close socket connection
+	// TODO: remove from session map
 }
