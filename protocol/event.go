@@ -1,15 +1,18 @@
 package protocol
 
+import "encoding/json"
+
 type Event struct {
 }
 
 type ClientSentEvent struct {
-	EventType string
-	Data      interface{}
+	EventType string          `json:"type"`
+	Data      json.RawMessage `json:"data"`
 }
 
 type ServerSentEvent struct {
-	ClientSentEvent
+	EventType string      `json:"type"`
+	Data      interface{} `json:"data"`
 	//metadata returned to client can be added here:
 
 }
