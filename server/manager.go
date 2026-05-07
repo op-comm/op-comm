@@ -101,3 +101,9 @@ func (manager *Manager) removeSession(clientID string) {
 		delete(manager.sessions, clientID)
 	}
 }
+
+func (manager *Manager) sessionCount() int {
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+	return len(manager.sessions)
+}
