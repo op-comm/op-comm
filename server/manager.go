@@ -81,7 +81,7 @@ func (manager *Manager) cleanup() {
 	manager.sessionMutex.Unlock()
 
 	for _, session := range sessionsToClose {
-		session.Close()
+		session.Close(websocket.StatusGoingAway, "Server shutting down")
 	}
 
 }
@@ -97,7 +97,7 @@ func (manager *Manager) removeSession(clientID string) {
 	defer manager.sessionMutex.Unlock()
 	session, sessionExists := manager.sessions[clientID]
 	if sessionExists {
-		session.Close()
+		session.Close(websocket.StatusNormalClosure, "session closed")
 		delete(manager.sessions, clientID)
 	}
 }

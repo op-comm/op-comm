@@ -41,6 +41,7 @@ func (session *Session) HandleOutboundEventsFromManager() {
 	}
 }
 
-func (session *Session) Close() {
+func (session *Session) Close(status websocket.StatusCode, reason string) {
 	// TODO: close socket connection
+	session.connection.Close(status, reason)
 }

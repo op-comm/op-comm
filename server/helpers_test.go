@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var SMALL_DELAY time.Duration = 10 * time.Millisecond
+
 func setupTestServer(t *testing.T) (*Manager, string, func()) {
 	t.Helper()
 	manager := NewManager()
