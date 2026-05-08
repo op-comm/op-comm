@@ -3,6 +3,8 @@
 all: test cleanup build
 
 test:
+	go test -v ./...
+test-race:
 	go test -v -race ./...
 
 cleanup:
