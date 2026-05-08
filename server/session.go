@@ -28,6 +28,7 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager) *Sessio
 
 func (session *Session) SendIncomingEventsToManager() {
 	for {
+		//TODO:
 		// read socket
 		// transfer into event struct
 		// write to manager input buffer
@@ -36,10 +37,10 @@ func (session *Session) SendIncomingEventsToManager() {
 
 func (session *Session) HandleOutboundEventsFromManager() {
 	for {
-		// write to socket
+		//TODO: write to socket
 	}
 }
 
-func (session *Session) Close() {
-	// close socket connection
+func (session *Session) Close(status websocket.StatusCode, reason string) {
+	session.connection.Close(status, reason)
 }
