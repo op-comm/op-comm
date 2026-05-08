@@ -1,6 +1,6 @@
-.PHONY: test cleanup build
+.PHONY: test test-race cleanup build
 
-all: test cleanup build
+all: test test-race cleanup build
 
 test:
 	go test -v ./...
