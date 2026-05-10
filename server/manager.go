@@ -7,21 +7,24 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	"github.com/op-comm/op-comm/protocol"
 )
 
 type Manager struct {
-	InboundBuffer  chan *protocol.ClientSentEvent
+	InboundBuffer  chan sessionEventWrapper
 	sessions       map[string]*Session
 	sessionMutex   sync.RWMutex
 	clientIDMethod func(*http.Request) string
+	handlers       map[string]EventHandler
+	services       map[string]*EventService
 }
 
 func NewManager() *Manager {
 	return &Manager{
-		InboundBuffer: make(chan *protocol.ClientSentEvent),
+		InboundBuffer: make(chan sessionEventWrapper),
 		sessions:      make(map[string]*Session),
 		sessionMutex:  sync.RWMutex{},
+		handlers:      make(map[string]EventHandler),
+		services:      make(map[string]*EventService),
 		clientIDMethod: func(request *http.Request) string {
 			return uuid.NewString()
 		},
@@ -41,7 +44,7 @@ func (manager *Manager) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case inboundEvent := <-manager.InboundBuffer:
-			manager.handleEvent(*inboundEvent)
+			manager.handleEvent(inboundEvent)
 		}
 	}
 }
@@ -63,13 +66,22 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	clientSession.SendIncomingEventsToManager()
 }
 
-func (manager *Manager) handleEvent(event protocol.ClientSentEvent) {
-	//TODO: process events
+//Note: this is NOT threadsafe, this must be used before the Run method
+func (manager *Manager) On(action string, callback EventHandler) {
+	manager.handlers[action] = callback
+}
+
+func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
+
+	session := wrapper.session
+	event := wrapper.event
+
+	if handler, exists := manager.handlers[event.EventType]; exists {
+		handler(event, session)
+	}
 }
 
 func (manager *Manager) cleanup() {
-	//TODO: implement cleanup process
-
 	manager.sessionMutex.Lock()
 
 	sessionsToClose := make([]*Session, 0, len(manager.sessions))

@@ -10,6 +10,11 @@ import (
 // it's likely a network issue and the session should be removed
 var MAX_BUFFER_EVENTS_BEFORE_DISCONNECT int = 512
 
+type sessionEventWrapper struct {
+	event   *protocol.ClientSentEvent
+	session *Session
+}
+
 type Session struct {
 	ID           string
 	connection   *websocket.Conn
