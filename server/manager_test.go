@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/op-comm/op-comm/protocol"
 )
 
 func TestManager_WSRequest(t *testing.T) {
@@ -37,3 +39,56 @@ func TestManager_WSRequest(t *testing.T) {
 // TODO: add more session management test
 
 //TODO: add stress test?
+
+func TestManager_HandlesCustomEvent(t *testing.T) {
+	manager, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	expectedToBeTrueAfterEvent := false
+	manager.On("toggle", func(event *protocol.ClientSentEvent, session *Session) {
+		expectedToBeTrueAfterEvent = true
+	})
+
+	data, err := json.Marshal("my custom data")
+	if err != nil {
+		t.Fatalf("Failed to marshal json")
+	}
+	session := NewSession("123", nil, manager)
+	manager.handleEvent(sessionEventWrapper{
+		event:   &protocol.ClientSentEvent{EventType: "toggle", Data: data},
+		session: session,
+	})
+
+	if !expectedToBeTrueAfterEvent {
+		t.Fatalf("Expected custom event to be ran")
+	}
+}
+
+func TestManager_HandlesCustomService(t *testing.T) {
+	manager, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	expectedToBeTrueAfterEvent := false
+
+	customService := EventServicFunc(func(action string, event *protocol.ClientSentEvent, session *Session) {
+		if action == "toggle" {
+			expectedToBeTrueAfterEvent = true
+		}
+	})
+
+	manager.RegisterEventService("bool", customService)
+
+	data, err := json.Marshal("my custom data")
+	if err != nil {
+		t.Fatalf("Failed to marshal json")
+	}
+	session := NewSession("123", nil, manager)
+	manager.handleEvent(sessionEventWrapper{
+		event:   &protocol.ClientSentEvent{EventType: "bool:toggle", Data: data},
+		session: session,
+	})
+
+	if !expectedToBeTrueAfterEvent {
+		t.Fatalf("Expected custom event service to be ran")
+	}
+}
