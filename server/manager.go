@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -15,7 +16,7 @@ type Manager struct {
 	sessionMutex   sync.RWMutex
 	clientIDMethod func(*http.Request) string
 	handlers       map[string]EventHandler
-	services       map[string]*EventService
+	services       map[string]EventService
 }
 
 func NewManager() *Manager {
@@ -24,7 +25,7 @@ func NewManager() *Manager {
 		sessions:      make(map[string]*Session),
 		sessionMutex:  sync.RWMutex{},
 		handlers:      make(map[string]EventHandler),
-		services:      make(map[string]*EventService),
+		services:      make(map[string]EventService),
 		clientIDMethod: func(request *http.Request) string {
 			return uuid.NewString()
 		},
@@ -66,9 +67,13 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	clientSession.SendIncomingEventsToManager()
 }
 
-//Note: this is NOT threadsafe, this must be used before the Run method
+// Note: this is NOT threadsafe, this must be used before the Run method
 func (manager *Manager) On(action string, callback EventHandler) {
 	manager.handlers[action] = callback
+}
+
+func (manager *Manager) RegisterEventService(namespace string, service EventService) {
+	manager.services[namespace] = service
 }
 
 func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
@@ -78,6 +83,18 @@ func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
 
 	if handler, exists := manager.handlers[event.EventType]; exists {
 		handler(event, session)
+		return
+	}
+
+	eventType := event.EventType
+	typeSplit := strings.SplitN(eventType, ":", 2)
+	if len(typeSplit) < 2 {
+		return
+	}
+	namespace, action := typeSplit[0], typeSplit[1]
+
+	if service, exists := manager.services[namespace]; exists {
+		service.Handle(action, event, session)
 	}
 }
 

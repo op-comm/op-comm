@@ -64,6 +64,31 @@ func TestManager_HandlesCustomEvent(t *testing.T) {
 	}
 }
 
-func TestManager_HandlesEvent(t *testing.T) {
+func TestManager_HandlesCustomService(t *testing.T) {
+	manager, _, cleanup := setupTestServer(t)
+	defer cleanup()
 
+	expectedToBeTrueAfterEvent := false
+
+	customService := EventServicFunc(func(action string, event *protocol.ClientSentEvent, session *Session) {
+		if action == "toggle" {
+			expectedToBeTrueAfterEvent = true
+		}
+	})
+
+	manager.RegisterEventService("bool", customService)
+
+	data, err := json.Marshal("my custom data")
+	if err != nil {
+		t.Fatalf("Failed to marshal json")
+	}
+	session := NewSession("123", nil, manager)
+	manager.handleEvent(sessionEventWrapper{
+		event:   &protocol.ClientSentEvent{EventType: "bool:toggle", Data: data},
+		session: session,
+	})
+
+	if !expectedToBeTrueAfterEvent {
+		t.Fatalf("Expected custom event service to be ran")
+	}
 }
