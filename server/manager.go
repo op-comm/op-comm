@@ -41,6 +41,12 @@ func (manager *Manager) SetClientIDMethod(method func(request *http.Request) str
 func (manager *Manager) Run(ctx context.Context) {
 	defer manager.cleanup()
 	for {
+		select { //ensures it will be evaulated no matter what
+		case <-ctx.Done():
+			return 
+		default:
+		}
+
 		select {
 		case <-ctx.Done():
 			return
@@ -56,12 +62,13 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 		return
 	}
 
+	clientCtx, cancel := context.WithCancel(context.Background()) 
 	clientID := manager.clientIDMethod(request)
-	clientSession := NewSession(clientID, connection, manager)
+	clientSession := NewSession(clientID, connection, manager, cancel)
 
 	manager.addSession(clientSession)
 
-	go clientSession.HandleOutboundEventsFromManager()
+	go clientSession.HandleOutboundEventsFromManager(clientCtx)
 	// since each request is its own goroutine we can use
 	// the current one to handle reading from the socket
 	clientSession.SendIncomingEventsToManager()
@@ -127,6 +134,7 @@ func (manager *Manager) removeSession(clientID string) {
 	session, sessionExists := manager.sessions[clientID]
 	if sessionExists {
 		session.Close(websocket.StatusNormalClosure, "session closed")
+		session.cancel()
 		delete(manager.sessions, clientID)
 	}
 }
