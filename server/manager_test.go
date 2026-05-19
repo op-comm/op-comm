@@ -53,7 +53,8 @@ func TestManager_HandlesCustomEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal json")
 	}
-	session := NewSession("123", nil, manager)
+	_, cancel := context.WithCancel(context.Background())
+	session := NewSession("123", nil, manager, cancel)
 	manager.handleEvent(sessionEventWrapper{
 		event:   &protocol.ClientSentEvent{EventType: "toggle", Data: data},
 		session: session,
@@ -82,7 +83,8 @@ func TestManager_HandlesCustomService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to marshal json")
 	}
-	session := NewSession("123", nil, manager)
+	_, cancel := context.WithCancel(context.Background())
+	session := NewSession("123", nil, manager, cancel)
 	manager.handleEvent(sessionEventWrapper{
 		event:   &protocol.ClientSentEvent{EventType: "bool:toggle", Data: data},
 		session: session,

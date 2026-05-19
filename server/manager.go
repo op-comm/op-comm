@@ -41,12 +41,6 @@ func (manager *Manager) SetClientIDMethod(method func(request *http.Request) str
 func (manager *Manager) Run(ctx context.Context) {
 	defer manager.cleanup()
 	for {
-		select { //ensures it will be evaulated no matter what
-		case <-ctx.Done():
-			return 
-		default:
-		}
-
 		select {
 		case <-ctx.Done():
 			return
@@ -68,10 +62,8 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 
 	manager.addSession(clientSession)
 
-	go clientSession.HandleOutboundEventsFromManager(clientCtx)
-	// since each request is its own goroutine we can use
-	// the current one to handle reading from the socket
-	clientSession.SendIncomingEventsToManager()
+	go clientSession.writePump(clientCtx)
+	clientSession.readPump()
 }
 
 // Note: this is NOT threadsafe, this must be used before the Run method
@@ -79,6 +71,7 @@ func (manager *Manager) On(action string, callback EventHandler) {
 	manager.handlers[action] = callback
 }
 
+// Note: this is NOT threadsafe, this must be used before the Run method
 func (manager *Manager) RegisterEventService(namespace string, service EventService) {
 	manager.services[namespace] = service
 }

@@ -46,7 +46,7 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel 
 // our socket is the actual network connection representaiton, so once that errors
 // we can actually remove our session from the manager and clean it up since it is having
 // issues
-func (session *Session) SendIncomingEventsToManager() {
+func (session *Session) readPump() {
 	defer session.Manager.removeSession(session.ID)
 	for {
 
@@ -70,7 +70,7 @@ func (session *Session) SendIncomingEventsToManager() {
 }
 
 // writes to socket
-func (session *Session) HandleOutboundEventsFromManager(ctx context.Context) {
+func (session *Session) writePump(ctx context.Context) {
 	for { 
 		
 		select {

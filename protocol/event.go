@@ -14,5 +14,5 @@ type ServerSentEvent struct {
 	EventType string      `json:"type"`
 	Data      interface{} `json:"data"`
 	//metadata returned to client can be added here:
-
+	
 }
