@@ -15,8 +15,7 @@ import (
 // it's likely a network issue and the session should be removed
 var MAX_BUFFER_EVENTS_BEFORE_DISCONNECT int = 512
 
-var WRITE_TIMEOUT = 10 * time.Second  
-
+var WRITE_TIMEOUT = 10 * time.Second
 
 type sessionEventWrapper struct {
 	event   *protocol.ClientSentEvent
@@ -28,7 +27,7 @@ type Session struct {
 	connection   *websocket.Conn
 	Manager      *Manager
 	OutputBuffer chan protocol.ServerSentEvent
-	cancel context.CancelFunc
+	cancel       context.CancelFunc
 }
 
 func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel context.CancelFunc) *Session {
@@ -36,9 +35,8 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel 
 		ID:           id,
 		connection:   connection,
 		Manager:      manager,
-		cancel: cancel,
+		cancel:       cancel,
 		OutputBuffer: make(chan protocol.ServerSentEvent, MAX_BUFFER_EVENTS_BEFORE_DISCONNECT),
-
 	}
 }
 
@@ -63,7 +61,7 @@ func (session *Session) readPump() {
 		}
 
 		session.Manager.InboundBuffer <- sessionEventWrapper{
-			event: &event,
+			event:   &event,
 			session: session,
 		}
 	}
@@ -71,12 +69,12 @@ func (session *Session) readPump() {
 
 // writes to socket
 func (session *Session) writePump(ctx context.Context) {
-	for { 
-		
+	for {
+
 		select {
 		case <-ctx.Done():
 			return
-		
+
 		case event := <-session.OutputBuffer:
 			byteData, marshalErr := json.Marshal(event)
 			if marshalErr != nil {

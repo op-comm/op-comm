@@ -56,7 +56,7 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 		return
 	}
 
-	clientCtx, cancel := context.WithCancel(context.Background()) 
+	clientCtx, cancel := context.WithCancel(context.Background())
 	clientID := manager.clientIDMethod(request)
 	clientSession := NewSession(clientID, connection, manager, cancel)
 
