@@ -56,15 +56,14 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 		return
 	}
 
+	clientCtx, cancel := context.WithCancel(context.Background())
 	clientID := manager.clientIDMethod(request)
-	clientSession := NewSession(clientID, connection, manager)
+	clientSession := NewSession(clientID, connection, manager, cancel)
 
 	manager.addSession(clientSession)
 
-	go clientSession.HandleOutboundEventsFromManager()
-	// since each request is its own goroutine we can use
-	// the current one to handle reading from the socket
-	clientSession.SendIncomingEventsToManager()
+	go clientSession.writePump(clientCtx)
+	clientSession.readPump()
 }
 
 // Note: this is NOT threadsafe, this must be used before the Run method
@@ -72,6 +71,7 @@ func (manager *Manager) On(action string, callback EventHandler) {
 	manager.handlers[action] = callback
 }
 
+// Note: this is NOT threadsafe, this must be used before the Run method
 func (manager *Manager) RegisterEventService(namespace string, service EventService) {
 	manager.services[namespace] = service
 }
@@ -127,6 +127,7 @@ func (manager *Manager) removeSession(clientID string) {
 	session, sessionExists := manager.sessions[clientID]
 	if sessionExists {
 		session.Close(websocket.StatusNormalClosure, "session closed")
+		session.cancel()
 		delete(manager.sessions, clientID)
 	}
 }
