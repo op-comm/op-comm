@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ func TestSession_Close(t *testing.T) {
 	manager, wsURL, cleanup := setupTestServer(t)
 	defer cleanup()
 	ctx := context.Background()
-	connection, session := connectAndFetchSession(t, manager, wsURL)
+	connection, session := connectAndFetchSession(t, manager, wsURL, []string{})
 	go session.Close(websocket.StatusNormalClosure, "session closed")
 
 	_, _, readErr := connection.Read(ctx)
@@ -35,7 +36,7 @@ func TestSession_ReadPumpForwardsDataToManager(t *testing.T) {
 	manager, wsURL, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	connection, _ := connectAndFetchSession(t, manager, wsURL)
+	connection, _ := connectAndFetchSession(t, manager, wsURL, []string{})
 	defer connection.Close(websocket.StatusNormalClosure, "")
 
 	ctx, cancel := context.WithTimeout(context.Background(), TEST_WRITE_TIMEOUT)
@@ -74,7 +75,7 @@ func TestSession_WritePumpSendsDataToClient(t *testing.T) {
 	manager, wsURL, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	connection, session := connectAndFetchSession(t, manager, wsURL)
+	connection, session := connectAndFetchSession(t, manager, wsURL, []string{})
 	defer connection.Close(websocket.StatusNormalClosure, "")
 
 	expectedType := "test:data"
@@ -107,7 +108,7 @@ func TestSession_WritePumpSendsDataToClient(t *testing.T) {
 func TestSession_IsRemovedFromManagerOnSocketClose(t *testing.T) {
 	manager, wsURL, cleanup := setupTestServer(t)
 	defer cleanup()
-	connection, session := connectAndFetchSession(t, manager, wsURL)
+	connection, session := connectAndFetchSession(t, manager, wsURL, []string{})
 	connection.Close(websocket.StatusNormalClosure, "")
 
 	managerDeletedSession := pollEvent(t, SMALL_DELAY, 10, func() bool {
@@ -127,7 +128,7 @@ func TestSession_IgnoresInvalidJSON(t *testing.T) {
 
 	manager, wsURL, cleanup := setupTestServer(t)
 	defer cleanup()
-	connection, session := connectAndFetchSession(t, manager, wsURL)
+	connection, session := connectAndFetchSession(t, manager, wsURL, []string{})
 	defer connection.Close(websocket.StatusNormalClosure, "")
 
 	inputData, jsonErr := json.Marshal(`"Data"`)
@@ -166,7 +167,7 @@ func TestSession_IgnoresInvalidJSON(t *testing.T) {
 
 }
 
-func connectAndFetchSession(t *testing.T, manager *Manager, wsURL string) (*websocket.Conn, *Session) {
+func connectAndFetchSession(t *testing.T, manager *Manager, wsURL string, existingIds []string) (*websocket.Conn, *Session) {
 	ctx := context.Background()
 	clientConn, _, err := websocket.Dial(ctx, wsURL, nil)
 	if err != nil {
@@ -178,6 +179,9 @@ func connectAndFetchSession(t *testing.T, manager *Manager, wsURL string) (*webs
 		manager.sessionMutex.RLock()
 		defer manager.sessionMutex.RUnlock()
 		for _, s := range manager.sessions {
+			if slices.Contains(existingIds, s.ID) {
+				continue
+			}
 			serverSession = s
 			return true
 		}
