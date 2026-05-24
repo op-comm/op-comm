@@ -17,6 +17,8 @@ type Manager struct {
 	clientIDMethod func(*http.Request) string
 	handlers       map[string]EventHandler
 	services       map[string]EventService
+	rooms          map[string]*Room
+	roomMutex      sync.RWMutex
 }
 
 func NewManager() *Manager {
@@ -29,6 +31,9 @@ func NewManager() *Manager {
 		clientIDMethod: func(request *http.Request) string {
 			return uuid.NewString()
 		},
+
+		rooms:     make(map[string]*Room),
+		roomMutex: sync.RWMutex{},
 	}
 }
 
@@ -99,6 +104,13 @@ func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
 }
 
 func (manager *Manager) cleanup() {
+
+	manager.roomMutex.Lock()
+	defer manager.roomMutex.Unlock()
+	clear(manager.rooms)
+
+	// clear rooms first so we don't access broken sessions within rooms
+
 	manager.sessionMutex.Lock()
 
 	sessionsToClose := make([]*Session, 0, len(manager.sessions))
@@ -128,6 +140,7 @@ func (manager *Manager) removeSession(clientID string) {
 	if sessionExists {
 		session.Close(websocket.StatusNormalClosure, "session closed")
 		session.cancel()
+		manager.removeSessionFromAllRooms(session)
 		delete(manager.sessions, clientID)
 	}
 }
@@ -136,4 +149,39 @@ func (manager *Manager) sessionCount() int {
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	return len(manager.sessions)
+}
+
+func (manager *Manager) GetRoom(roomID string) *Room {
+	manager.roomMutex.RLock()
+	defer manager.roomMutex.RUnlock()
+	return manager.rooms[roomID]
+}
+
+func (manager *Manager) CreateRoom(roomID string) *Room {
+	manager.roomMutex.Lock()
+	defer manager.roomMutex.Unlock()
+	room, exists := manager.rooms[roomID]
+	if !exists {
+		room = NewRoom()
+		manager.rooms[roomID] = room
+	}
+	return room
+}
+
+func (manager *Manager) DeleteRoom(roomID string) {
+	manager.roomMutex.Lock()
+	defer manager.roomMutex.Unlock()
+	delete(manager.rooms, roomID)
+}
+
+func (manager *Manager) removeSessionFromAllRooms(session *Session) {
+	manager.roomMutex.Lock()
+	defer manager.roomMutex.Unlock()
+
+	for roomID, room := range manager.rooms {
+		remainingSessionsCount := room.RemoveSession(session)
+		if remainingSessionsCount <= 0 {
+			delete(manager.rooms, roomID)
+		}
+	}
 }
