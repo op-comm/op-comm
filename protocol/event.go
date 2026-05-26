@@ -11,7 +11,7 @@ type ClientSentEvent struct {
 }
 
 type ServerSentEvent struct {
-	EventType string      `json:"type"`
+	EventType string          `json:"type"`
 	Data      json.RawMessage `json:"data"`
 	//metadata returned to client can be added here:
 
