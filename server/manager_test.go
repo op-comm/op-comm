@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -93,4 +95,92 @@ func TestManager_HandlesCustomService(t *testing.T) {
 	if !expectedToBeTrueAfterEvent {
 		t.Fatalf("Expected custom event service to be ran")
 	}
+}
+
+func TestManager_DeniesUnauthorizedRequest(t *testing.T) {
+
+	manager, wsURL, cleanup := setupTestServer(t)
+	manager.SetAuthenticator(rejectAllAuthenticator{})
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancel()
+
+	_, response, err := websocket.Dial(ctx, wsURL, nil)
+
+	if err == nil {
+		t.Fatal("expected request to fail, but it succeeded")
+	}
+
+	if response == nil || response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("Expected 401 response status, got %v", response.Status)
+	}
+
+}
+
+func TestManager_AcceptsAuthorizedRequest(t *testing.T) {
+
+	manager, wsURL, cleanup := setupTestServer(t)
+	manager.SetAuthenticator(acceptAllAuthenticator{})
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancel()
+
+	_, response, err := websocket.Dial(ctx, wsURL, nil)
+
+	if err != nil {
+		t.Fatalf("expected no error from request: got %v", err)
+	}
+
+	if response == nil || response.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("Expected 101 response status, got %v", response.Status)
+	}
+
+	managerCreatedSession := pollEvent(t, SMALL_DELAY, 5, func() bool {
+		return manager.sessionCount() >= 1
+	})
+	if !managerCreatedSession {
+		t.Fatal("expected session to be created")
+	}
+
+}
+
+func TestManager_AcceptsWhenNoAuthenticator(t *testing.T) {
+
+	manager, wsURL, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+	defer cancel()
+
+	_, response, err := websocket.Dial(ctx, wsURL, nil)
+
+	if err != nil {
+		t.Fatalf("expected no error from request: got %v", err)
+	}
+
+	if response == nil || response.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("Expected 101 response status, got %v", response.Status)
+	}
+
+	managerCreatedSession := pollEvent(t, SMALL_DELAY, 5, func() bool {
+		return manager.sessionCount() >= 1
+	})
+	if !managerCreatedSession {
+		t.Fatal("expected session to be created")
+	}
+
+}
+
+type rejectAllAuthenticator struct{}
+
+func (_ rejectAllAuthenticator) Authenticate(_ *http.Request) (map[string]any, error) {
+	return nil, errors.New("Rejected")
+}
+
+type acceptAllAuthenticator struct{}
+
+func (_ acceptAllAuthenticator) Authenticate(_ *http.Request) (map[string]any, error) {
+	return nil, nil
 }

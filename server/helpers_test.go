@@ -10,6 +10,7 @@ import (
 
 var SMALL_DELAY time.Duration = 10 * time.Millisecond
 
+// creates a server with manager.HandleWSUpgradeRequest HandlerFunc
 func setupTestServer(t *testing.T) (*Manager, string, func()) {
 	t.Helper()
 	manager := NewManager()
