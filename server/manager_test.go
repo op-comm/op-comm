@@ -184,3 +184,71 @@ type acceptAllAuthenticator struct{}
 func (_ acceptAllAuthenticator) Authenticate(_ *http.Request) (map[string]any, error) {
 	return nil, nil
 }
+
+func TestManager_MiddlewareAllowsEvent(t *testing.T) {
+	middlewareRan := false
+	eventRan := false
+	allowMiddleWare := func(event *protocol.ClientSentEvent, session *Session) bool {
+		middlewareRan = true
+		return true
+	}
+
+	event := func(event *protocol.ClientSentEvent, session *Session) {
+		eventRan = true
+	}
+
+	manager := NewManager()
+
+	manager.On("test_event", event)
+	manager.UseMiddleware(allowMiddleWare)
+
+	manager.handleEvent(sessionEventWrapper{
+		session: &Session{},
+		event: &protocol.ClientSentEvent{
+			EventType: "test_event",
+		},
+	})
+
+	if !middlewareRan {
+		t.Fatal("Middleware did not run when expected to")
+	}
+
+	if !eventRan {
+		t.Fatal("Event did not run when expected to")
+	}
+
+}
+
+func TestManager_MiddlewareDeniesEvent(t *testing.T) {
+	middlewareRan := false
+	eventRan := false
+	allowMiddleWare := func(event *protocol.ClientSentEvent, session *Session) bool {
+		middlewareRan = true
+		return false
+	}
+
+	event := func(event *protocol.ClientSentEvent, session *Session) {
+		eventRan = true
+	}
+
+	manager := NewManager()
+
+	manager.On("test_event", event)
+	manager.UseMiddleware(allowMiddleWare)
+
+	manager.handleEvent(sessionEventWrapper{
+		session: &Session{},
+		event: &protocol.ClientSentEvent{
+			EventType: "test_event",
+		},
+	})
+
+	if !middlewareRan {
+		t.Fatal("Middleware did not run when expected to.")
+	}
+
+	if eventRan {
+		t.Fatal("Event ran when not expected to.")
+	}
+
+}
