@@ -20,6 +20,7 @@ type Manager struct {
 	rooms          map[string]*Room
 	roomMutex      sync.RWMutex
 	authenticator  Authenticator
+	middlewares    []Middleware
 }
 
 func NewManager() *Manager {
@@ -34,8 +35,9 @@ func NewManager() *Manager {
 		},
 		authenticator: nil,
 
-		rooms:     make(map[string]*Room),
-		roomMutex: sync.RWMutex{},
+		rooms:       make(map[string]*Room),
+		roomMutex:   sync.RWMutex{},
+		middlewares: []Middleware{},
 	}
 }
 
@@ -91,6 +93,12 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	clientSession.readPump()
 }
 
+// Note: this is NOT threadsafe, this must be used before the Run method.
+// Middlewares are run in the order they are defined.
+func (manager *Manager) UseMiddleware(middleware Middleware) {
+	manager.middlewares = append(manager.middlewares, middleware)
+}
+
 // Note: this is NOT threadsafe, this must be used before the Run method
 func (manager *Manager) On(action string, callback EventHandler) {
 	manager.handlers[action] = callback
@@ -105,6 +113,12 @@ func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
 
 	session := wrapper.session
 	event := wrapper.event
+
+	for _, middleware := range manager.middlewares {
+		if !middleware(event, session) { // rejected
+			return
+		}
+	}
 
 	if handler, exists := manager.handlers[event.EventType]; exists {
 		handler(event, session)
