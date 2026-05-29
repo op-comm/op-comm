@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -28,6 +29,8 @@ type Session struct {
 	Manager      *Manager
 	OutputBuffer chan protocol.ServerSentEvent
 	cancel       context.CancelFunc
+	state        map[string]any
+	stateMutex   sync.RWMutex
 }
 
 func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel context.CancelFunc) *Session {
@@ -37,10 +40,12 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel 
 		Manager:      manager,
 		cancel:       cancel,
 		OutputBuffer: make(chan protocol.ServerSentEvent, MAX_BUFFER_EVENTS_BEFORE_DISCONNECT),
+		state:        make(map[string]any),
+		stateMutex:   sync.RWMutex{},
 	}
 }
 
-//reads from socket
+// reads from socket
 // our socket is the actual network connection representaiton, so once that errors
 // we can actually remove our session from the manager and clean it up since it is having
 // issues
@@ -97,4 +102,26 @@ func (session *Session) writePump(ctx context.Context) {
 
 func (session *Session) Close(status websocket.StatusCode, reason string) {
 	session.connection.Close(status, reason)
+}
+
+func (session *Session) Get(key string) (any, bool) {
+	session.stateMutex.RLock()
+	defer session.stateMutex.RUnlock()
+	value, exists := session.state[key]
+	return value, exists
+}
+
+func (session *Session) Set(key string, value any) {
+	session.stateMutex.Lock()
+	defer session.stateMutex.Unlock()
+	session.state[key] = value
+}
+
+func (session *Session) CopyIntoState(pairs map[string]any) {
+	session.stateMutex.Lock()
+	defer session.stateMutex.Unlock()
+
+	for key, value := range pairs {
+		session.state[key] = value
+	}
 }

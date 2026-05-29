@@ -19,6 +19,7 @@ type Manager struct {
 	services       map[string]EventService
 	rooms          map[string]*Room
 	roomMutex      sync.RWMutex
+	authenticator  Authenticator
 }
 
 func NewManager() *Manager {
@@ -31,6 +32,7 @@ func NewManager() *Manager {
 		clientIDMethod: func(request *http.Request) string {
 			return uuid.NewString()
 		},
+		authenticator: nil,
 
 		rooms:     make(map[string]*Room),
 		roomMutex: sync.RWMutex{},
@@ -40,6 +42,10 @@ func NewManager() *Manager {
 // TODO: replace with functional options pattern?
 func (manager *Manager) SetClientIDMethod(method func(request *http.Request) string) {
 	manager.clientIDMethod = method
+}
+
+func (manager *Manager) SetAuthenticator(authenticator Authenticator) {
+	manager.authenticator = authenticator
 }
 
 // ends with the context and will simply just handle every inbound event
@@ -56,6 +62,17 @@ func (manager *Manager) Run(ctx context.Context) {
 }
 
 func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, request *http.Request) {
+
+	var authState map[string]any
+	if manager.authenticator != nil {
+		var authError error
+		authState, authError = manager.authenticator.Authenticate(request)
+		if authError != nil {
+			writer.WriteHeader(http.StatusUnauthorized)
+			writer.Write([]byte(authError.Error()))
+			return
+		}
+	}
 	connection, err := websocket.Accept(writer, request, nil)
 	if err != nil {
 		return
@@ -65,6 +82,9 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	clientID := manager.clientIDMethod(request)
 	clientSession := NewSession(clientID, connection, manager, cancel)
 
+	if authState != nil {
+		clientSession.CopyIntoState(authState)
+	}
 	manager.addSession(clientSession)
 
 	go clientSession.writePump(clientCtx)
