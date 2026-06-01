@@ -17,8 +17,9 @@ type Manager struct {
 	clientIDMethod func(*http.Request) string
 	handlers       map[string]EventHandler
 	services       map[string]EventService
-	rooms          map[string]*Room
+	rooms          map[string]Room
 	roomMutex      sync.RWMutex
+	roomFactory func(id string) Room
 	authenticator  Authenticator
 	middlewares    []Middleware
 }
@@ -35,8 +36,11 @@ func NewManager() *Manager {
 		},
 		authenticator: nil,
 
-		rooms:       make(map[string]*Room),
+		rooms:       make(map[string]Room),
 		roomMutex:   sync.RWMutex{},
+		roomFactory: func (id string) Room {
+			return NewInMemoryRoom()
+		},
 		middlewares: []Middleware{},
 	}
 }
@@ -44,6 +48,10 @@ func NewManager() *Manager {
 // TODO: replace with functional options pattern?
 func (manager *Manager) SetClientIDMethod(method func(request *http.Request) string) {
 	manager.clientIDMethod = method
+}
+
+func(manager *Manager) SetRoomFactory(factory func(roomID string) Room){
+	manager.roomFactory = factory
 }
 
 func (manager *Manager) SetAuthenticator(authenticator Authenticator) {
@@ -185,18 +193,18 @@ func (manager *Manager) sessionCount() int {
 	return len(manager.sessions)
 }
 
-func (manager *Manager) GetRoom(roomID string) *Room {
+func (manager *Manager) GetRoom(roomID string) Room {
 	manager.roomMutex.RLock()
 	defer manager.roomMutex.RUnlock()
 	return manager.rooms[roomID]
 }
 
-func (manager *Manager) CreateRoom(roomID string) *Room {
+func (manager *Manager) CreateRoom(roomID string) Room {
 	manager.roomMutex.Lock()
 	defer manager.roomMutex.Unlock()
 	room, exists := manager.rooms[roomID]
 	if !exists {
-		room = NewRoom()
+		room = manager.roomFactory(roomID)
 		manager.rooms[roomID] = room
 	}
 	return room
