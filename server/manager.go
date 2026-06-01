@@ -19,7 +19,7 @@ type Manager struct {
 	services       map[string]EventService
 	rooms          map[string]Room
 	roomMutex      sync.RWMutex
-	roomFactory func(id string) Room
+	roomFactory    func(id string) Room
 	authenticator  Authenticator
 	middlewares    []Middleware
 }
@@ -36,9 +36,9 @@ func NewManager() *Manager {
 		},
 		authenticator: nil,
 
-		rooms:       make(map[string]Room),
-		roomMutex:   sync.RWMutex{},
-		roomFactory: func (id string) Room {
+		rooms:     make(map[string]Room),
+		roomMutex: sync.RWMutex{},
+		roomFactory: func(id string) Room {
 			return NewInMemoryRoom()
 		},
 		middlewares: []Middleware{},
@@ -50,7 +50,7 @@ func (manager *Manager) SetClientIDMethod(method func(request *http.Request) str
 	manager.clientIDMethod = method
 }
 
-func(manager *Manager) SetRoomFactory(factory func(roomID string) Room){
+func (manager *Manager) SetRoomFactory(factory func(roomID string) Room) {
 	manager.roomFactory = factory
 }
 

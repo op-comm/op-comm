@@ -7,10 +7,10 @@ import (
 	"github.com/op-comm/op-comm/protocol"
 )
 
-type Room interface{
+type Room interface {
 	AddSession(session *Session)
 	RemoveSession(session *Session) int
-	Broadcast(event protocol.ServerSentEvent) 
+	Broadcast(event protocol.ServerSentEvent)
 }
 type InMemoryRoom struct {
 	sessions     map[string]*Session
