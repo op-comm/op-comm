@@ -22,6 +22,8 @@ type Manager struct {
 	roomFactory    func(id string) Room
 	authenticator  Authenticator
 	middlewares    []Middleware
+
+	allowedOrigins []string
 }
 
 func NewManager() *Manager {
@@ -42,6 +44,8 @@ func NewManager() *Manager {
 			return NewInMemoryRoom()
 		},
 		middlewares: []Middleware{},
+
+		allowedOrigins: []string{},
 	}
 }
 
@@ -56,6 +60,10 @@ func (manager *Manager) SetRoomFactory(factory func(roomID string) Room) {
 
 func (manager *Manager) SetAuthenticator(authenticator Authenticator) {
 	manager.authenticator = authenticator
+}
+
+func (manager *Manager) SetAllowedOrigins(origins []string) {
+	manager.allowedOrigins = origins
 }
 
 // ends with the context and will simply just handle every inbound event
@@ -83,7 +91,11 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 			return
 		}
 	}
-	connection, err := websocket.Accept(writer, request, nil)
+	options := &websocket.AcceptOptions{}
+	if len(manager.allowedOrigins) > 0 {
+		options.OriginPatterns = manager.allowedOrigins
+	}
+	connection, err := websocket.Accept(writer, request, options)
 	if err != nil {
 		return
 	}

@@ -61,7 +61,7 @@ func (session *Session) readPump() {
 
 		unmarshalErr := json.Unmarshal(byteData, &event)
 		if unmarshalErr != nil {
-			fmt.Printf("Invalid Message")
+			fmt.Printf("Invalid Message\n")
 			continue //ignore invalid messages
 		}
 

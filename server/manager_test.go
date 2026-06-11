@@ -73,7 +73,7 @@ func TestManager_HandlesCustomService(t *testing.T) {
 
 	expectedToBeTrueAfterEvent := false
 
-	customService := EventServicFunc(func(action string, event *protocol.ClientSentEvent, session *Session) {
+	customService := EventServiceFunc(func(action string, event *protocol.ClientSentEvent, session *Session) {
 		if action == "toggle" {
 			expectedToBeTrueAfterEvent = true
 		}

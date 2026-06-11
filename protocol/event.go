@@ -7,12 +7,13 @@ type Event struct {
 
 type ClientSentEvent struct {
 	EventType string          `json:"type"`
-	Data      json.RawMessage `json:"data"`
+	Data      json.RawMessage `json:"data,omitempty"`
+	RequestID string          `json:"request_id,omitempty"`
 }
 
 type ServerSentEvent struct {
 	EventType string          `json:"type"`
-	Data      json.RawMessage `json:"data"`
-	//metadata returned to client can be added here:
-
+	Data      json.RawMessage `json:"data,omitempty"`
+	RequestID string          `json:"request_id,omitempty"`
+	Error     string          `json:"error,omitempty"`
 }

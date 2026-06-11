@@ -10,8 +10,8 @@ type EventService interface {
 	Handle(action string, event *protocol.ClientSentEvent, session *Session)
 }
 
-type EventServicFunc func(action string, event *protocol.ClientSentEvent, session *Session)
+type EventServiceFunc func(action string, event *protocol.ClientSentEvent, session *Session)
 
-func (eventServicFunc EventServicFunc) Handle(action string, event *protocol.ClientSentEvent, session *Session) {
-	eventServicFunc(action, event, session)
+func (eventServiceFunc EventServiceFunc) Handle(action string, event *protocol.ClientSentEvent, session *Session) {
+	eventServiceFunc(action, event, session)
 }
