@@ -11,6 +11,7 @@ type Room interface {
 	AddSession(session *Session)
 	RemoveSession(session *Session) int
 	Broadcast(event protocol.ServerSentEvent)
+	HasSession(session *Session) bool
 }
 type InMemoryRoom struct {
 	sessions     map[string]*Session
@@ -37,6 +38,13 @@ func (room *InMemoryRoom) RemoveSession(session *Session) int {
 	defer room.sessionMutex.Unlock()
 	delete(room.sessions, session.ID)
 	return len(room.sessions)
+}
+
+func (room *InMemoryRoom) HasSession(targetSession *Session) bool {
+	room.sessionMutex.RLock()
+	defer room.sessionMutex.RUnlock()
+	_, exists := room.sessions[targetSession.ID]
+	return exists
 }
 
 func (room *InMemoryRoom) Broadcast(event protocol.ServerSentEvent) {

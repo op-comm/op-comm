@@ -125,3 +125,30 @@ func (session *Session) CopyIntoState(pairs map[string]any) {
 		session.state[key] = value
 	}
 }
+
+func (session *Session) Send(event protocol.ServerSentEvent) {
+	select {
+	case session.OutputBuffer <- event:
+	default:
+		fmt.Println("Session buffer full, dropping message") 
+	}
+}
+
+func (session *Session) Reply(request *protocol.ClientSentEvent, data interface{}, err string) {
+	response := protocol.ServerSentEvent{
+		EventType: request.EventType + ":reply",
+		RequestID: request.RequestID,
+		Error: err,
+	}
+
+	if data != nil {
+		jsonData, jsonErr := json.Marshal(data)
+		if jsonErr != nil {
+			response.Error = "Internal Server Error: Failed to marshal response data"
+		} else {
+			response.Data = jsonData
+		}
+	}
+	session.Send(response)
+
+}
