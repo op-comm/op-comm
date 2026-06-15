@@ -130,7 +130,10 @@ func (session *Session) Send(event protocol.ServerSentEvent) {
 	select {
 	case session.OutputBuffer <- event:
 	default:
-		fmt.Println("Session buffer full, dropping message") 
+			// reaching here means the output buffer is full
+			// which likely points to network issues on the client
+			// we can disconnect here to prevent further blocking
+			session.Close(websocket.StatusAbnormalClosure, "Too many messages in buffer")
 	}
 }
 

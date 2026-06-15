@@ -3,7 +3,6 @@ package server
 import (
 	"sync"
 
-	"github.com/coder/websocket"
 	"github.com/op-comm/op-comm/protocol"
 )
 
@@ -51,14 +50,17 @@ func (room *InMemoryRoom) Broadcast(event protocol.ServerSentEvent) {
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
 	for _, session := range room.sessions {
-		select {
-		case session.OutputBuffer <- event:
-			continue
-		default:
-			// reaching here means the output buffer is full
-			// which likely points to network issues on the client
-			// we can disconnect here to prevent further blocking
-			session.Close(websocket.StatusAbnormalClosure, "Too many messages in buffer")
+		session.Send(event)
+	}
+}
+
+func (room *InMemoryRoom) BroadcastToOthers(sender *Session, event protocol.ServerSentEvent) {
+	room.sessionMutex.RLock()
+	defer room.sessionMutex.RUnlock()
+
+	for _, session := range room.sessions {
+		if sender.ID != session.ID {
+			session.Send(event)
 		}
 	}
 }
