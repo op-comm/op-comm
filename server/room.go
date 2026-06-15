@@ -10,6 +10,7 @@ type Room interface {
 	AddSession(session *Session)
 	RemoveSession(session *Session) int
 	Broadcast(event protocol.ServerSentEvent)
+	BroadcastToOthers(sender *Session, event protocol.ServerSentEvent) 
 	HasSession(session *Session) bool
 }
 type InMemoryRoom struct {
