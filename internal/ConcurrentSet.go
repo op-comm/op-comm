@@ -4,7 +4,6 @@ import (
 	"sync"
 )
 
-type Set[T comparable] map[T]struct{}
 type ConcurrentSet[T comparable] struct {
 	set   Set[T]
 	mutex sync.RWMutex
@@ -20,38 +19,31 @@ func NewConcurrentSet[T comparable]() *ConcurrentSet[T] {
 func (cs *ConcurrentSet[T]) Has(data T) bool {
 	cs.mutex.RLock()
 	defer cs.mutex.RUnlock()
-	_, ok := cs.set[data]
-	return ok
+	return cs.set.Has(data)
 }
 
 func (cs *ConcurrentSet[T]) Add(data T) {
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
-	cs.set[data] = struct{}{}
+	cs.set.Add(data)
 }
 
 func (cs *ConcurrentSet[T]) Delete(data T)  {
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
-
-	delete(cs.set, data)
+	cs.set.Delete(data)
 }
 
 func ConcurrentSetFromList[T comparable](items []T)  *ConcurrentSet[T] {
 	cs := NewConcurrentSet[T]()
-	for _, item := range items {
-		cs.set[item] = struct{}{}
-	}
+	cs.set = SetFromList(items)
 	return cs
 }
 
 func (cs *ConcurrentSet[T]) AsList() []T {
 	cs.mutex.RLock() 
 	defer cs.mutex.RUnlock()
-	items := make([]T, 0, len(cs.set))
-	for item := range cs.set {
-		items = append(items, item)
-	}
-	return items
+	
+	return cs.set.AsList()
 }
 
