@@ -8,6 +8,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/op-comm/op-comm/protocol"
 )
 
 type Manager struct {
@@ -73,8 +74,9 @@ func (manager *Manager) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		//TODO: setup worker pool?
 		case inboundEvent := <-manager.InboundBuffer:
-			manager.handleEvent(inboundEvent)
+			go manager.handleEvent(inboundEvent)
 		}
 	}
 }
@@ -127,6 +129,13 @@ func (manager *Manager) On(action string, callback EventHandler) {
 // Note: this is NOT threadsafe, this must be used before the Run method
 func (manager *Manager) RegisterEventService(namespace string, service EventService) {
 	manager.services[namespace] = service
+}
+func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+		for _, session :=  range manager.sessions {
+			session.Send(event)
+		}
 }
 
 func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
@@ -229,6 +238,7 @@ func (manager *Manager) DeleteRoom(roomID string) {
 }
 
 func (manager *Manager) removeSessionFromAllRooms(session *Session) {
+	//TODO: track rooms in session for faster removal
 	manager.roomMutex.Lock()
 	defer manager.roomMutex.Unlock()
 
@@ -239,3 +249,5 @@ func (manager *Manager) removeSessionFromAllRooms(session *Session) {
 		}
 	}
 }
+
+
