@@ -256,6 +256,19 @@ func (manager *Manager) GetRoom(roomID string) Room {
 	return manager.rooms[roomID]
 }
 
+func (manager *Manager) GetRoomIDs() []string {
+	manager.roomMutex.RLock()
+	defer manager.roomMutex.RUnlock()
+	roomIDs := make([]string, len(manager.rooms))
+
+	index := 0
+	for id := range manager.rooms{
+		roomIDs[index] = id
+		index++
+	}
+	return roomIDs
+}
+
 func (manager *Manager) CreateRoom(roomID string) Room {
 	manager.roomMutex.Lock()
 	defer manager.roomMutex.Unlock()
