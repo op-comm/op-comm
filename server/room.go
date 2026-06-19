@@ -3,6 +3,7 @@ package server
 import (
 	"sync"
 
+	"github.com/op-comm/op-comm/internal"
 	"github.com/op-comm/op-comm/protocol"
 )
 
@@ -64,4 +65,28 @@ func (room *InMemoryRoom) BroadcastToOthers(sender *Session, event protocol.Serv
 			session.Send(event)
 		}
 	}
+}
+
+
+
+func (room *InMemoryRoom) BroadcastExclude(event protocol.ServerSentEvent, sessionIds []string){
+	room.sessionMutex.RLock()
+	defer room.sessionMutex.RUnlock()
+	set := internal.SetFromList(sessionIds)
+	for _, session := range room.sessions {
+		if !set.Has(session.ID) {
+			session.Send(event)
+		}
+	}
+}
+
+func (room *InMemoryRoom) SendToOnly(event protocol.ServerSentEvent, sessionIds []string) {
+	room.sessionMutex.RLock()
+	defer room.sessionMutex.RUnlock()
+	for _, id := range sessionIds {
+		if session, exists := room.sessions[id]; exists {
+			session.Send(event)
+		}
+	}
+
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/op-comm/op-comm/internal"
 	"github.com/op-comm/op-comm/protocol"
 )
 
@@ -137,6 +138,27 @@ func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
 			session.Send(event)
 		}
 }
+
+func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, sessionIds []string){
+	set := internal.SetFromList(sessionIds)
+	for _, session := range manager.sessions {
+		if !set.Has(session.ID) {
+			session.Send(event)
+		}
+	}
+}
+
+func (manager *Manager) SendToOnly(event protocol.ServerSentEvent, sessionIds []string) {
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+	for _, id := range sessionIds {
+		if session, exists := manager.sessions[id]; exists {
+			session.Send(event)
+		}
+	}
+
+}
+
 
 func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
 
