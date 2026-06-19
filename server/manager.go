@@ -131,6 +131,7 @@ func (manager *Manager) On(action string, callback EventHandler) {
 func (manager *Manager) RegisterEventService(namespace string, service EventService) {
 	manager.services[namespace] = service
 }
+
 func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
@@ -139,10 +140,23 @@ func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
 		}
 }
 
-func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, sessionIds []string){
-	set := internal.SetFromList(sessionIds)
+func(manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, senderID string){
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
 	for _, session := range manager.sessions {
-		if !set.Has(session.ID) {
+		if senderID != session.ID{
+			session.Send(event)
+		}
+	}
+
+}
+
+func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string){
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+	blackList := internal.SetFromList(sessionIdsToExclude)
+	for _, session := range manager.sessions {
+		if !blackList.Has(session.ID) {
 			session.Send(event)
 		}
 	}

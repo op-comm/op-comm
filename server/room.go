@@ -10,9 +10,11 @@ import (
 type Room interface {
 	AddSession(session *Session)
 	RemoveSession(session *Session) int
-	Broadcast(event protocol.ServerSentEvent)
-	BroadcastToOthers(sender *Session, event protocol.ServerSentEvent) 
 	HasSession(session *Session) bool
+	Broadcast(event protocol.ServerSentEvent)
+	BroadcastToOthers(event protocol.ServerSentEvent, senderID string)
+	BroadcastExclude(event protocol.ServerSentEvent, sessionIds []string)
+	SendToOnly(event protocol.ServerSentEvent, sessionIds []string)
 }
 type InMemoryRoom struct {
 	sessions     map[string]*Session
@@ -56,25 +58,23 @@ func (room *InMemoryRoom) Broadcast(event protocol.ServerSentEvent) {
 	}
 }
 
-func (room *InMemoryRoom) BroadcastToOthers(sender *Session, event protocol.ServerSentEvent) {
+func (room *InMemoryRoom) BroadcastToOthers(event protocol.ServerSentEvent, senderID string){
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
 
 	for _, session := range room.sessions {
-		if sender.ID != session.ID {
+		if senderID != session.ID {
 			session.Send(event)
 		}
 	}
 }
 
-
-
-func (room *InMemoryRoom) BroadcastExclude(event protocol.ServerSentEvent, sessionIds []string){
+func (room *InMemoryRoom) BroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string){
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
-	set := internal.SetFromList(sessionIds)
+	blackList := internal.SetFromList(sessionIdsToExclude)
 	for _, session := range room.sessions {
-		if !set.Has(session.ID) {
+		if !blackList.Has(session.ID) {
 			session.Send(event)
 		}
 	}
