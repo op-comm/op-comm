@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -26,6 +28,8 @@ type Manager struct {
 	middlewares    []Middleware
 
 	allowedOrigins []string
+
+	logger *slog.Logger
 }
 
 func NewManager() *Manager {
@@ -48,6 +52,7 @@ func NewManager() *Manager {
 		middlewares: []Middleware{},
 
 		allowedOrigins: []string{},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)), // no logs
 	}
 }
 
@@ -62,6 +67,10 @@ func (manager *Manager) SetRoomFactory(factory func(roomID string) Room) {
 
 func (manager *Manager) SetAuthenticator(authenticator Authenticator) {
 	manager.authenticator = authenticator
+}
+
+func (manager *Manager) SetLogger(logger *slog.Logger){
+	manager.logger = logger
 }
 
 func (manager *Manager) SetAllowedOrigins(origins []string) {
@@ -86,9 +95,11 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 
 	var authState map[string]any
 	if manager.authenticator != nil {
+		
 		var authError error
 		authState, authError = manager.authenticator.Authenticate(request)
 		if authError != nil {
+			manager.logger.Warn("request failed authentication")
 			writer.WriteHeader(http.StatusUnauthorized)
 			writer.Write([]byte(authError.Error()))
 			return
@@ -100,6 +111,7 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	}
 	connection, err := websocket.Accept(writer, request, options)
 	if err != nil {
+		manager.logger.Warn("client failed to connect", "error", err)
 		return
 	}
 
@@ -108,6 +120,7 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	clientSession := NewSession(clientID, connection, manager, cancel)
 
 	if authState != nil {
+		manager.logger.Debug("client connected with auth state:" , "auth_state", authState)
 		clientSession.CopyIntoState(authState)
 	}
 	manager.addSession(clientSession)
@@ -136,6 +149,7 @@ func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 		for _, session :=  range manager.sessions {
+			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
 			session.Send(event)
 		}
 }
@@ -145,6 +159,7 @@ func(manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, s
 	defer manager.sessionMutex.RUnlock()
 	for _, session := range manager.sessions {
 		if senderID != session.ID{
+			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
 			session.Send(event)
 		}
 	}
@@ -157,6 +172,7 @@ func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, s
 	blackList := internal.SetFromList(sessionIdsToExclude)
 	for _, session := range manager.sessions {
 		if !blackList.Has(session.ID) {
+			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
 			session.Send(event)
 		}
 	}
@@ -205,8 +221,10 @@ func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
 func (manager *Manager) cleanup() {
 
 	manager.roomMutex.Lock()
-	defer manager.roomMutex.Unlock()
+
+	manager.logger.Debug("cleanup started")
 	clear(manager.rooms)
+	manager.roomMutex.Unlock()
 
 	// clear rooms first so we don't access broken sessions within rooms
 
@@ -230,6 +248,7 @@ func (manager *Manager) addSession(session *Session) {
 	manager.sessionMutex.Lock()
 	defer manager.sessionMutex.Unlock()
 	manager.sessions[session.ID] = session
+	manager.logger.Debug("added session", "session_id", session.ID)
 }
 
 func (manager *Manager) removeSession(clientID string) {
@@ -241,6 +260,7 @@ func (manager *Manager) removeSession(clientID string) {
 		session.cancel()
 		manager.removeSessionFromAllRooms(session)
 		delete(manager.sessions, clientID)
+		manager.logger.Debug("deleted session", "session_id", clientID)
 	}
 }
 
@@ -276,6 +296,7 @@ func (manager *Manager) CreateRoom(roomID string) Room {
 	if !exists {
 		room = manager.roomFactory(roomID)
 		manager.rooms[roomID] = room
+		manager.logger.Debug("created room", "room_id", roomID)
 	}
 	return room
 }
@@ -284,6 +305,7 @@ func (manager *Manager) DeleteRoom(roomID string) {
 	manager.roomMutex.Lock()
 	defer manager.roomMutex.Unlock()
 	delete(manager.rooms, roomID)
+	manager.logger.Debug("deleted room", "room_id", roomID)
 }
 
 func (manager *Manager) removeSessionFromAllRooms(session *Session) {
