@@ -253,13 +253,15 @@ func (manager *Manager) addSession(session *Session) {
 
 func (manager *Manager) removeSession(clientID string) {
 	manager.sessionMutex.Lock()
-	defer manager.sessionMutex.Unlock()
 	session, sessionExists := manager.sessions[clientID]
+	if sessionExists {
+		delete(manager.sessions, clientID)
+	}
+	manager.sessionMutex.Unlock() //unlock as soon as possible
 	if sessionExists {
 		session.Close(websocket.StatusNormalClosure, "session closed")
 		session.cancel()
 		manager.removeSessionFromAllRooms(session)
-		delete(manager.sessions, clientID)
 		manager.logger.Debug("deleted session", "session_id", clientID)
 	}
 }
