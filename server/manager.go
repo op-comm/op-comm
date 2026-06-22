@@ -33,7 +33,7 @@ type Manager struct {
 }
 
 func NewManager() *Manager {
-	return &Manager{
+	manager := &Manager{
 		InboundBuffer: make(chan sessionEventWrapper),
 		sessions:      make(map[string]*Session),
 		sessionMutex:  sync.RWMutex{},
@@ -46,14 +46,17 @@ func NewManager() *Manager {
 
 		rooms:     make(map[string]Room),
 		roomMutex: sync.RWMutex{},
-		roomFactory: func(id string) Room {
-			return NewInMemoryRoom()
-		},
 		middlewares: []Middleware{},
 
 		allowedOrigins: []string{},
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)), // no logs
 	}
+	// create this after manager is already created, so we can inject its logger
+	manager.roomFactory = func(id string) Room {
+		return NewInMemoryRoom(id, manager.logger.With("room_id", id))
+	}
+
+	return manager
 }
 
 // TODO: replace with functional options pattern?
@@ -159,7 +162,7 @@ func(manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, s
 	defer manager.sessionMutex.RUnlock()
 	for _, session := range manager.sessions {
 		if senderID != session.ID{
-			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
+			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType, "sender_id", senderID)
 			session.Send(event)
 		}
 	}
