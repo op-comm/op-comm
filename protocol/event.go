@@ -13,7 +13,7 @@ type ClientSentEvent struct {
 
 type ServerSentEvent struct {
 	EventType string          `json:"type"`
-	Data      json.RawMessage `json:"data,omitempty"`
+	Data      any			  `json:"data,omitempty"`
 	RequestID string          `json:"request_id,omitempty"`
 	Error     string          `json:"error,omitempty"`
 }
