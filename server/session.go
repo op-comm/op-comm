@@ -141,16 +141,8 @@ func (session *Session) Reply(request *protocol.ClientSentEvent, data interface{
 	response := protocol.ServerSentEvent{
 		EventType: request.EventType + ":reply",
 		RequestID: request.RequestID,
+		Data: data,
 		Error: err,
-	}
-
-	if data != nil {
-		jsonData, jsonErr := json.Marshal(data)
-		if jsonErr != nil {
-			response.Error = "Internal Server Error: Failed to marshal response data"
-		} else {
-			response.Data = jsonData
-		}
 	}
 	session.Send(response)
 
