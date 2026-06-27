@@ -24,7 +24,7 @@ type Manager struct {
 	rooms          map[string]Room
 	roomMutex      sync.RWMutex
 	roomFactory    func(id string) Room
-	authenticator  Authenticator
+	authenticator  RequestAuthenticator
 	middlewares    []Middleware
 
 	allowedOrigins []string
@@ -68,7 +68,7 @@ func (manager *Manager) SetRoomFactory(factory func(roomID string) Room) {
 	manager.roomFactory = factory
 }
 
-func (manager *Manager) SetAuthenticator(authenticator Authenticator) {
+func (manager *Manager) SetAuthenticator(authenticator RequestAuthenticator) {
 	manager.authenticator = authenticator
 }
 
