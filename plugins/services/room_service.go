@@ -11,7 +11,7 @@ import (
 	"github.com/op-comm/op-comm/server"
 )
 
-type RoomHandler func(room *server.Room, event *protocol.ClientSentEvent, session *server.Session)
+type RoomHandler func(room server.Room, event *protocol.ClientSentEvent, session *server.Session)
 
 type RoomService struct {
 	Manager *server.Manager
@@ -68,7 +68,7 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 		return
 	}
 
-	authorizeErr := service.Authorizer.Authorize(session, &room, action)
+	authorizeErr := service.Authorizer.Authorize(session, room, action)
 	if authorizeErr != nil {
 		session.Reply(event, nil, fmt.Sprintf("Unauthorized: %v", authorizeErr))
 		return
@@ -77,12 +77,13 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 	// custom actions have priority allows to override our defaults
 	handler, exists := service.Handlers[action]
 	if exists{
-		handler(&room, event, session)
+		handler(room, event, session)
 		return
 	}
 
 	switch action {
 		case "create":
+			room.AddSession(session)
 		case "delete":
 		case "join":
 		case "leave":
