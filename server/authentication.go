@@ -9,3 +9,10 @@ type RequestAuthenticator interface {
 type RoomAuthorizer interface {
 	Authorize(session *Session, room *Room, action string) error
 }
+
+type AllowAllRoomAuthorizer struct {
+}
+
+func (authorizer *AllowAllRoomAuthorizer) Authorize(session *Session, room *Room, action string) error {
+	return nil
+}
