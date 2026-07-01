@@ -18,9 +18,9 @@ var MAX_BUFFER_EVENTS_BEFORE_DISCONNECT int = 512
 
 var WRITE_TIMEOUT = 10 * time.Second
 
-type sessionEventWrapper struct {
-	event   *protocol.ClientSentEvent
-	session *Session
+type SessionEventWrapper struct {
+	Event   *protocol.ClientSentEvent
+	Session *Session
 }
 
 type Session struct {
@@ -65,9 +65,11 @@ func (session *Session) readPump() {
 			continue //ignore invalid messages
 		}
 
-		session.Manager.InboundBuffer <- sessionEventWrapper{
-			event:   &event,
-			session: session,
+		session.Manager.logger.Debug("received data from session", "session_id", session.ID, "event", event)
+		
+		session.Manager.InboundBuffer <- SessionEventWrapper{
+			Event:   &event,
+			Session: session,
 		}
 	}
 }
@@ -129,6 +131,7 @@ func (session *Session) CopyIntoState(pairs map[string]any) {
 func (session *Session) Send(event protocol.ServerSentEvent) {
 	select {
 	case session.OutputBuffer <- event:
+		session.Manager.logger.Debug("sending event to session", "session_id", session.ID, "event", event)
 	default:
 		// reaching here means the output buffer is full
 		// which likely points to network issues on the client
