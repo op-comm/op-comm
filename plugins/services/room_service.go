@@ -12,33 +12,58 @@ import (
 )
 
 type RoomHandler func(room server.Room, event *protocol.ClientSentEvent, session *server.Session)
+type RoomOption func(*RoomService)
 
-type RoomService struct {
-	Manager *server.Manager
-	Logger *slog.Logger
-	Authorizer server.RoomAuthorizer
-	Handlers map[string]RoomHandler // Not thread safe
+func defaultRoomService() RoomService {
+	return RoomService{
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Authorizer: &server.AllowAllRoomAuthorizer{},
+		Handlers:   make(map[string]RoomHandler),
+	}
 }
 
-func NewRoomService(manager *server.Manager, logger *slog.Logger, authorizer server.RoomAuthorizer, handlers map[string]RoomHandler) (*RoomService, error) {
+type RoomService struct {
+	Manager    *server.Manager
+	Logger     *slog.Logger
+	Authorizer server.RoomAuthorizer
+	Handlers   map[string]RoomHandler // Not thread safe
+}
+
+func WithLogger(logger slog.Logger) RoomOption {
+	return func(service *RoomService) {
+		service.Logger = &logger
+	}
+}
+
+func WithAuthorizer(authorizer server.RoomAuthorizer) RoomOption {
+	return func(service *RoomService) {
+		service.Authorizer = authorizer
+	}
+}
+
+func WithHandlers(handlers map[string]RoomHandler) RoomOption {
+	return func(service *RoomService) {
+		service.Handlers = handlers
+	}
+}
+
+// not thread safe, use before manager.Run()
+func (service *RoomService) SetHandler(action string, handler RoomHandler) {
+	service.Handlers[action] = handler
+}
+func NewRoomService(manager *server.Manager, serviceOptions ...RoomOption) (*RoomService, error) {
 	if manager == nil {
 		return nil, errors.New("manager is required")
 	}
-	if logger == nil {
-		logger = slog.New(slog.NewTextHandler(io.Discard, nil));
+
+	roomService := defaultRoomService()
+	roomService.Manager = manager
+
+	for _, option := range serviceOptions {
+		option(&roomService)
 	}
-	if authorizer == nil {
-		authorizer = &server.AllowAllRoomAuthorizer{}
-	}
-	if handlers == nil {
-		handlers = make(map[string]RoomHandler)
-	}
-	return &RoomService{
-		Manager: manager,
-		Logger: logger,
-		Authorizer: authorizer,
-		Handlers: handlers,
-	}, nil
+
+	return &roomService, nil
 }
 
 type BaseRoomRequest struct {
@@ -48,10 +73,18 @@ type BaseRoomReply struct {
 	RoomID string `json:"room_id"`
 	Status string `json:"status"`
 }
+type BaseRoomBroadcast struct {
+	RoomID string `json:"room_id"`
+	UserID string `json:"user_id,omitempty"`
+}
 
-func (service *RoomService) Handle(action string, event *protocol.ClientSentEvent, session *server.Session){
+type RoomListReply struct {
+	Rooms []string `json:"rooms"`
+}
 
-	if len(event.Data) == 0 {
+func (service *RoomService) Handle(action string, event *protocol.ClientSentEvent, session *server.Session) {
+
+	if len(event.Data) == 0 && action != "list" {
 		session.Reply(event, nil, "Missing payload")
 		return
 	}
@@ -60,7 +93,8 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 	if jsonErr := json.Unmarshal(event.Data, &requestData); jsonErr != nil {
 		session.Reply(event, nil, "Invalid JSON payload")
 		return
-	} 
+	}
+	roomID := requestData.RoomID
 
 	room := service.Manager.GetRoom(requestData.RoomID)
 	if room == nil && action != "create" {
@@ -76,19 +110,73 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 
 	// custom actions have priority allows to override our defaults
 	handler, exists := service.Handlers[action]
-	if exists{
+	if exists {
 		handler(room, event, session)
 		return
 	}
 
 	switch action {
-		case "create":
-			room.AddSession(session)
-		case "delete":
-		case "join":
-		case "leave":
-		default:
-			session.Reply(event, nil, fmt.Sprintf("Unkown action: %s", action))
+	case "list":
+		session.Reply(event, RoomListReply{
+			Rooms: service.Manager.GetRoomIDs(),
+		}, "")
+	case "create":
+		room = service.Manager.CreateRoom(roomID)
+		room.AddSession(session)
+		service.Manager.GlobalBroadcastToOthers(protocol.ServerSentEvent{
+			EventType: "room:created",
+			Data: BaseRoomBroadcast{
+				RoomID: roomID,
+			},
+		}, session.ID)
+		session.Reply(event, BaseRoomReply{
+			RoomID: roomID,
+			Status: "ACK",
+		}, "")
+	case "delete":
+		service.Manager.DeleteRoom(roomID)
+		room.BroadcastToOthers(protocol.ServerSentEvent{
+			EventType: "room:deleted",
+			Data: BaseRoomBroadcast{
+				RoomID: roomID,
+			},
+		}, session.ID)
+
+		session.Reply(event, BaseRoomReply{
+			RoomID: roomID,
+			Status: "ACK",
+		}, "")
+
+	case "join":
+		room.AddSession(session)
+		room.BroadcastToOthers(protocol.ServerSentEvent{
+			EventType: "room:user_joined",
+			Data: BaseRoomBroadcast{
+				RoomID: roomID,
+				UserID: session.ID,
+			},
+		}, session.ID)
+
+		session.Reply(event, BaseRoomReply{
+			RoomID: roomID,
+			Status: "ACK",
+		}, "")
+
+	case "leave":
+		room.RemoveSession(session)
+		room.BroadcastToOthers(protocol.ServerSentEvent{
+			EventType: "room:user_left",
+			Data: BaseRoomBroadcast{
+				RoomID: roomID,
+				UserID: session.ID,
+			},
+		}, session.ID)
+
+		session.Reply(event, BaseRoomReply{
+			RoomID: roomID,
+			Status: "ACK",
+		}, "")
+	default:
+		session.Reply(event, nil, fmt.Sprintf("Unknown action: %s", action))
 	}
 }
-
