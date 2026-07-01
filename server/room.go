@@ -20,16 +20,16 @@ type Room interface {
 type InMemoryRoom struct {
 	sessions     map[string]*Session
 	sessionMutex sync.RWMutex
-	id string
-	logger *slog.Logger
+	id           string
+	logger       *slog.Logger
 }
 
 func NewInMemoryRoom(id string, logger *slog.Logger) *InMemoryRoom {
 	return &InMemoryRoom{
 		sessions:     make(map[string]*Session),
 		sessionMutex: sync.RWMutex{},
-		id: id,
-		logger: logger,
+		id:           id,
+		logger:       logger,
 	}
 }
 
@@ -66,7 +66,7 @@ func (room *InMemoryRoom) Broadcast(event protocol.ServerSentEvent) {
 	}
 }
 
-func (room *InMemoryRoom) BroadcastToOthers(event protocol.ServerSentEvent, senderID string){
+func (room *InMemoryRoom) BroadcastToOthers(event protocol.ServerSentEvent, senderID string) {
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
 
@@ -78,7 +78,7 @@ func (room *InMemoryRoom) BroadcastToOthers(event protocol.ServerSentEvent, send
 	}
 }
 
-func (room *InMemoryRoom) BroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string){
+func (room *InMemoryRoom) BroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string) {
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
 	blackList := internal.SetFromList(sessionIdsToExclude)

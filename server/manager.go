@@ -44,12 +44,12 @@ func NewManager() *Manager {
 		},
 		authenticator: nil,
 
-		rooms:     make(map[string]Room),
-		roomMutex: sync.RWMutex{},
+		rooms:       make(map[string]Room),
+		roomMutex:   sync.RWMutex{},
 		middlewares: []Middleware{},
 
 		allowedOrigins: []string{},
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)), // no logs
+		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)), // no logs
 	}
 	// create this after manager is already created, so we can inject its logger
 	manager.roomFactory = func(id string) Room {
@@ -72,7 +72,7 @@ func (manager *Manager) SetAuthenticator(authenticator RequestAuthenticator) {
 	manager.authenticator = authenticator
 }
 
-func (manager *Manager) SetLogger(logger *slog.Logger){
+func (manager *Manager) SetLogger(logger *slog.Logger) {
 	manager.logger = logger
 }
 
@@ -98,7 +98,7 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 
 	var authState map[string]any
 	if manager.authenticator != nil {
-		
+
 		var authError error
 		authState, authError = manager.authenticator.Authenticate(request)
 		if authError != nil {
@@ -123,7 +123,7 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	clientSession := NewSession(clientID, connection, manager, cancel)
 
 	if authState != nil {
-		manager.logger.Debug("client connected with auth state:" , "auth_state", authState)
+		manager.logger.Debug("client connected with auth state:", "auth_state", authState)
 		clientSession.CopyIntoState(authState)
 	}
 	manager.addSession(clientSession)
@@ -151,17 +151,17 @@ func (manager *Manager) RegisterEventService(namespace string, service EventServ
 func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
-		for _, session :=  range manager.sessions {
-			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
-			session.Send(event)
-		}
+	for _, session := range manager.sessions {
+		manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
+		session.Send(event)
+	}
 }
 
-func(manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, senderID string){
+func (manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, senderID string) {
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	for _, session := range manager.sessions {
-		if senderID != session.ID{
+		if senderID != session.ID {
 			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType, "sender_id", senderID)
 			session.Send(event)
 		}
@@ -169,7 +169,7 @@ func(manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, s
 
 }
 
-func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string){
+func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string) {
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	blackList := internal.SetFromList(sessionIdsToExclude)
@@ -191,7 +191,6 @@ func (manager *Manager) SendToOnly(event protocol.ServerSentEvent, sessionIds []
 	}
 
 }
-
 
 func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
 
@@ -287,7 +286,7 @@ func (manager *Manager) GetRoomIDs() []string {
 	roomIDs := make([]string, len(manager.rooms))
 
 	index := 0
-	for id := range manager.rooms{
+	for id := range manager.rooms {
 		roomIDs[index] = id
 		index++
 	}
@@ -325,5 +324,3 @@ func (manager *Manager) removeSessionFromAllRooms(session *Session) {
 		}
 	}
 }
-
-

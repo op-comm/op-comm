@@ -11,7 +11,7 @@ type ConcurrentSet[T comparable] struct {
 
 func NewConcurrentSet[T comparable]() *ConcurrentSet[T] {
 	return &ConcurrentSet[T]{
-		set: make(Set[T]),
+		set:   make(Set[T]),
 		mutex: sync.RWMutex{},
 	}
 }
@@ -28,22 +28,21 @@ func (cs *ConcurrentSet[T]) Add(data T) {
 	cs.set.Add(data)
 }
 
-func (cs *ConcurrentSet[T]) Delete(data T)  {
+func (cs *ConcurrentSet[T]) Delete(data T) {
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 	cs.set.Delete(data)
 }
 
-func ConcurrentSetFromList[T comparable](items []T)  *ConcurrentSet[T] {
+func ConcurrentSetFromList[T comparable](items []T) *ConcurrentSet[T] {
 	cs := NewConcurrentSet[T]()
 	cs.set = SetFromList(items)
 	return cs
 }
 
 func (cs *ConcurrentSet[T]) AsList() []T {
-	cs.mutex.RLock() 
+	cs.mutex.RLock()
 	defer cs.mutex.RUnlock()
-	
+
 	return cs.set.AsList()
 }
-

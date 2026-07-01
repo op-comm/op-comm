@@ -130,10 +130,10 @@ func (session *Session) Send(event protocol.ServerSentEvent) {
 	select {
 	case session.OutputBuffer <- event:
 	default:
-			// reaching here means the output buffer is full
-			// which likely points to network issues on the client
-			// we can disconnect here to prevent further blocking
-			session.Close(websocket.StatusAbnormalClosure, "Too many messages in buffer")
+		// reaching here means the output buffer is full
+		// which likely points to network issues on the client
+		// we can disconnect here to prevent further blocking
+		session.Close(websocket.StatusAbnormalClosure, "Too many messages in buffer")
 	}
 }
 
@@ -141,8 +141,8 @@ func (session *Session) Reply(request *protocol.ClientSentEvent, data interface{
 	response := protocol.ServerSentEvent{
 		EventType: request.EventType + ":reply",
 		RequestID: request.RequestID,
-		Data: data,
-		Error: err,
+		Data:      data,
+		Error:     err,
 	}
 	session.Send(response)
 
