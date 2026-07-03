@@ -15,7 +15,7 @@ import (
 )
 
 type Manager struct {
-	InboundBuffer  chan sessionEventWrapper
+	InboundBuffer  chan SessionEventWrapper
 	sessions       map[string]*Session
 	sessionMutex   sync.RWMutex
 	clientIDMethod func(*http.Request) string
@@ -34,7 +34,7 @@ type Manager struct {
 
 func NewManager() *Manager {
 	manager := &Manager{
-		InboundBuffer: make(chan sessionEventWrapper),
+		InboundBuffer: make(chan SessionEventWrapper),
 		sessions:      make(map[string]*Session),
 		sessionMutex:  sync.RWMutex{},
 		handlers:      make(map[string]EventHandler),
@@ -140,6 +140,7 @@ func (manager *Manager) UseMiddleware(middleware Middleware) {
 
 // Note: this is NOT threadsafe, this must be used before the Run method
 func (manager *Manager) On(action string, callback EventHandler) {
+	manager.logger.Debug("registered new action", "action",  action)
 	manager.handlers[action] = callback
 }
 
@@ -192,18 +193,23 @@ func (manager *Manager) SendToOnly(event protocol.ServerSentEvent, sessionIds []
 
 }
 
-func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
+func (manager *Manager) handleEvent(wrapper SessionEventWrapper) {
 
-	session := wrapper.session
-	event := wrapper.event
+	session := wrapper.Session
+	event := wrapper.Event
+
+	manager.logger.Debug("handling event", "event", event, "session_id", session.ID)
 
 	for _, middleware := range manager.middlewares {
 		if !middleware(event, session) { // rejected
+			//TODO: possibly add an optional rejection response?
+			manager.logger.Debug("middleware rejected event", "event", event, "session_id", session.ID)
 			return
 		}
 	}
 
 	if handler, exists := manager.handlers[event.EventType]; exists {
+		manager.logger.Debug("executing handler for event", "event", event)
 		handler(event, session)
 		return
 	}
@@ -216,6 +222,7 @@ func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
 	namespace, action := typeSplit[0], typeSplit[1]
 
 	if service, exists := manager.services[namespace]; exists {
+		manager.logger.Debug("executing service for event", "event", event)
 		service.Handle(action, event, session)
 	}
 }
