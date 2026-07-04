@@ -12,6 +12,7 @@ type Room interface {
 	AddSession(session *Session)
 	RemoveSession(session *Session) int
 	HasSession(session *Session) bool
+	Cleanup()
 	Broadcast(event protocol.ServerSentEvent)
 	BroadcastToOthers(event protocol.ServerSentEvent, senderID string)
 	BroadcastExclude(event protocol.ServerSentEvent, sessionIds []string)
@@ -37,6 +38,7 @@ func (room *InMemoryRoom) AddSession(session *Session) {
 	room.sessionMutex.Lock()
 	defer room.sessionMutex.Unlock()
 	room.sessions[session.ID] = session
+	session.AddRoom(room.id)
 	room.logger.Debug("added session to room", "session_id", session.ID)
 }
 
@@ -46,6 +48,7 @@ func (room *InMemoryRoom) RemoveSession(session *Session) int {
 	room.sessionMutex.Lock()
 	defer room.sessionMutex.Unlock()
 	delete(room.sessions, session.ID)
+	session.RemoveRoom(room.id)
 	room.logger.Debug("removed session from room", "session_id", session.ID)
 	return len(room.sessions)
 }
@@ -57,45 +60,54 @@ func (room *InMemoryRoom) HasSession(targetSession *Session) bool {
 	return exists
 }
 
-func (room *InMemoryRoom) Broadcast(event protocol.ServerSentEvent) {
+func (room *InMemoryRoom) Cleanup() {
+	room.logger.Debug("cleaning up room", "room_id", room.id)
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
 	for _, session := range room.sessions {
-		room.logger.Debug("room broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
+		session.RemoveRoom(room.id)
+	}
+}
+
+func (room *InMemoryRoom) Broadcast(event protocol.ServerSentEvent) {
+	room.logger.Debug("room broadcast", "event", event)
+	room.sessionMutex.RLock()
+	defer room.sessionMutex.RUnlock()
+	for _, session := range room.sessions {
 		session.Send(event)
 	}
 }
 
 func (room *InMemoryRoom) BroadcastToOthers(event protocol.ServerSentEvent, senderID string) {
+	room.logger.Debug("room broadcast from sender", "event", event, "sender_id", senderID)
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
 
 	for _, session := range room.sessions {
 		if senderID != session.ID {
-			room.logger.Debug("room broadcasting event to session", "session_id", session.ID, "event_type", event.EventType, "sender_id", senderID)
 			session.Send(event)
 		}
 	}
 }
 
 func (room *InMemoryRoom) BroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string) {
+	room.logger.Debug("room broadcast exclude", "event", event, "exclude_count", len(sessionIdsToExclude))
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
 	blackList := internal.SetFromList(sessionIdsToExclude)
 	for _, session := range room.sessions {
 		if !blackList.Has(session.ID) {
-			room.logger.Debug("room broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
 			session.Send(event)
 		}
 	}
 }
 
 func (room *InMemoryRoom) SendToOnly(event protocol.ServerSentEvent, sessionIds []string) {
+	room.logger.Debug("room sending event to sessions", "event", event, "session_count", len(sessionIds))
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
 	for _, id := range sessionIds {
 		if session, exists := room.sessions[id]; exists {
-			room.logger.Debug("room broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
 			session.Send(event)
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/op-comm/op-comm/internal"
 	"github.com/op-comm/op-comm/protocol"
 )
 
@@ -30,8 +31,11 @@ type Session struct {
 	Manager      *Manager
 	OutputBuffer chan protocol.ServerSentEvent
 	cancel       context.CancelFunc
-	state        map[string]any
-	stateMutex   sync.RWMutex
+
+	RoomIDs *internal.ConcurrentSet[string]
+
+	state      map[string]any
+	stateMutex sync.RWMutex
 
 	closeOnce sync.Once
 	isClosed  atomic.Bool // allows us to deny fast on requests that sneak in during closing
@@ -46,6 +50,7 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel 
 		OutputBuffer: make(chan protocol.ServerSentEvent, MAX_BUFFER_EVENTS_BEFORE_DISCONNECT),
 		state:        make(map[string]any),
 		stateMutex:   sync.RWMutex{},
+		RoomIDs:      internal.NewConcurrentSet[string](),
 	}
 }
 
@@ -57,7 +62,7 @@ func (session *Session) readPump() {
 
 	// we don't need to attempt to close after our loop because the socket closing causes the loop to break
 	// in the first place
-	defer session.Manager.removeSession(session.ID)
+	defer session.Cleanup()
 
 	for {
 
@@ -132,6 +137,10 @@ func (session *Session) Close(status websocket.StatusCode, reason string) {
 	})
 }
 
+func (session *Session) Cleanup() {
+	session.Manager.removeSession(session.ID)
+}
+
 func (session *Session) Get(key string) (any, bool) {
 	session.stateMutex.RLock()
 	defer session.stateMutex.RUnlock()
@@ -185,4 +194,19 @@ func (session *Session) Reply(request *protocol.ClientSentEvent, data interface{
 	}
 	session.Send(response)
 
+}
+
+func (session *Session) GetRooms() []string {
+	return session.RoomIDs.AsList()
+}
+func (session *Session) IsInRoom(roomID string) bool {
+	return session.RoomIDs.Has(roomID)
+}
+
+func (session *Session) AddRoom(roomID string) {
+	session.RoomIDs.Add(roomID)
+}
+
+func (session *Session) RemoveRoom(roomID string) {
+	session.RoomIDs.Delete(roomID)
 }

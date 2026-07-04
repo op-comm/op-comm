@@ -140,7 +140,7 @@ func (manager *Manager) UseMiddleware(middleware Middleware) {
 
 // Note: this is NOT threadsafe, this must be used before the Run method
 func (manager *Manager) On(action string, callback EventHandler) {
-	manager.logger.Debug("registered new action", "action",  action)
+	manager.logger.Debug("registered new action", "action", action)
 	manager.handlers[action] = callback
 }
 
@@ -150,20 +150,20 @@ func (manager *Manager) RegisterEventService(namespace string, service EventServ
 }
 
 func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
+	manager.logger.Debug("global broadcast", "event", event)
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	for _, session := range manager.sessions {
-		manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
 		session.Send(event)
 	}
 }
 
 func (manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, senderID string) {
+	manager.logger.Debug("global broadcast from sender", "event", event, "sender_id", senderID)
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	for _, session := range manager.sessions {
 		if senderID != session.ID {
-			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType, "sender_id", senderID)
 			session.Send(event)
 		}
 	}
@@ -171,18 +171,19 @@ func (manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, 
 }
 
 func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string) {
+	manager.logger.Debug("global broadcast exclude", "event", event, "exclude_count", len(sessionIdsToExclude))
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	blackList := internal.SetFromList(sessionIdsToExclude)
 	for _, session := range manager.sessions {
 		if !blackList.Has(session.ID) {
-			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
 			session.Send(event)
 		}
 	}
 }
 
 func (manager *Manager) SendToOnly(event protocol.ServerSentEvent, sessionIds []string) {
+	manager.logger.Debug("sending event to sessions", "event", event, "session_count", len(sessionIds))
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	for _, id := range sessionIds {
@@ -315,19 +316,33 @@ func (manager *Manager) CreateRoom(roomID string) Room {
 func (manager *Manager) DeleteRoom(roomID string) {
 	manager.roomMutex.Lock()
 	defer manager.roomMutex.Unlock()
-	delete(manager.rooms, roomID)
-	manager.logger.Debug("deleted room", "room_id", roomID)
+	manager.deleteRoomUnlocked(roomID)
 }
 
 func (manager *Manager) removeSessionFromAllRooms(session *Session) {
-	//TODO: track rooms in session for faster removal
 	manager.roomMutex.Lock()
 	defer manager.roomMutex.Unlock()
 
-	for roomID, room := range manager.rooms {
-		remainingSessionsCount := room.RemoveSession(session)
-		if remainingSessionsCount <= 0 {
-			delete(manager.rooms, roomID)
+	roomIDs := session.GetRooms()
+	for _, roomID := range roomIDs {
+		if room, exists := manager.rooms[roomID]; exists {
+			remainingSessions := room.RemoveSession(session)
+			if remainingSessions <= 0 {
+				manager.deleteRoomUnlocked(roomID)
+			}
 		}
 	}
+}
+
+// Only use when the roomMutex has been locked
+// You should use manager.DeleteRoom unless the roomMutex is already locked
+func (manager *Manager) deleteRoomUnlocked(roomID string) {
+	room, exists := manager.rooms[roomID]
+	if exists {
+		room.Cleanup()
+	}
+
+	delete(manager.rooms, roomID)
+	manager.logger.Debug("deleted room", "room_id", roomID)
+
 }
