@@ -18,10 +18,10 @@ func TestSession_Close(t *testing.T) {
 	defer cleanup()
 	ctx, cancel := context.WithTimeout(context.Background(), testutil.TEST_READ_TIMEOUT)
 	defer cancel()
-	connection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	clientConnection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
 	go session.Close(websocket.StatusNormalClosure, "session closed")
 
-	_, _, readErr := connection.Read(ctx)
+	_, _, readErr := clientConnection.Read(ctx)
 	if readErr == nil {
 		t.Fatal("Expected websocket read to fail")
 	}
@@ -88,8 +88,8 @@ func TestSession_WritePumpSendsDataToSocket(t *testing.T) {
 func TestSession_IsRemovedFromManagerOnSocketClose(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	connection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
-	connection.Close(websocket.StatusNormalClosure, "")
+	clientConnection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	managerDeletedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
 		sessionMutex := server.GetManagerSessionMutex(manager)
@@ -139,4 +139,29 @@ func TestSession_IgnoresInvalidJSON(t *testing.T) {
 		t.Fatalf("Expected session to not be removed from session map of manager. Session was removed.")
 	}
 
+}
+
+func TestSession_IsRemovedWhenBufferFull(t *testing.T) {
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
+	defer cleanup()
+
+	clientConnection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	defer clientConnection.Close(websocket.StatusNormalClosure, "")
+
+	//this needs to exceed buffer size
+	for range 1000 {
+		session.Send(protocol.ServerSentEvent{})
+	}
+
+	managerDeletedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
+		sessionMutex := server.GetManagerSessionMutex(manager)
+		sessionMutex.RLock()
+		defer sessionMutex.RUnlock()
+		_, exists := server.GetManagerSessionMap(manager)[session.ID]
+		return !exists
+	})
+
+	if !managerDeletedSession {
+		t.Fatalf("Expected session to be removed from session map of manager. Session was not removed.")
+	}
 }

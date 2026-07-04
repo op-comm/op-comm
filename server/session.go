@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -31,6 +32,9 @@ type Session struct {
 	cancel       context.CancelFunc
 	state        map[string]any
 	stateMutex   sync.RWMutex
+
+	closeOnce sync.Once
+	isClosed  atomic.Bool // allows us to deny fast on requests that sneak in during closing
 }
 
 func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel context.CancelFunc) *Session {
@@ -50,9 +54,16 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel 
 // we can actually remove our session from the manager and clean it up since it is having
 // issues
 func (session *Session) readPump() {
+
+	// we don't need to attempt to close after our loop because the socket closing causes the loop to break
+	// in the first place
 	defer session.Manager.removeSession(session.ID)
+
 	for {
 
+		if session.isClosed.Load() {
+			return
+		}
 		_, byteData, err := session.connection.Read(context.Background())
 		if err != nil {
 			closeStatus := websocket.CloseStatus(err)
@@ -84,6 +95,10 @@ func (session *Session) readPump() {
 func (session *Session) writePump(ctx context.Context) {
 	for {
 
+		if session.isClosed.Load() {
+			return
+		}
+
 		select {
 		case <-ctx.Done():
 			return
@@ -109,7 +124,12 @@ func (session *Session) writePump(ctx context.Context) {
 }
 
 func (session *Session) Close(status websocket.StatusCode, reason string) {
-	session.connection.Close(status, reason)
+	// we don't need to worry about attempting to close multiple times because if it fails that means the connection already is destroyed
+	session.closeOnce.Do(func() {
+		session.isClosed.Store(true)
+		session.Manager.logger.Debug("closing socket", "status", status, "reason", reason, "session_id", session.ID)
+		session.connection.Close(status, reason)
+	})
 }
 
 func (session *Session) Get(key string) (any, bool) {
@@ -135,6 +155,11 @@ func (session *Session) CopyIntoState(pairs map[string]any) {
 }
 
 func (session *Session) Send(event protocol.ServerSentEvent) {
+
+	if session.isClosed.Load() {
+		return
+	}
+
 	select {
 	case session.OutputBuffer <- event:
 		session.Manager.logger.Debug("sending event to session", "session_id", session.ID, "event", event)
@@ -147,6 +172,11 @@ func (session *Session) Send(event protocol.ServerSentEvent) {
 }
 
 func (session *Session) Reply(request *protocol.ClientSentEvent, data interface{}, err string) {
+
+	if session.isClosed.Load() {
+		return
+	}
+
 	response := protocol.ServerSentEvent{
 		EventType: request.EventType + ":reply",
 		RequestID: request.RequestID,
