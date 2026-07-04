@@ -22,6 +22,9 @@ func ConnectAndFetchSession(t *testing.T, manager *server.Manager, wsURL string,
 		sessionMutex := server.GetManagerSessionMutex(manager)
 		sessionMutex.RLock()
 		defer sessionMutex.RUnlock()
+
+		// returns the first session in the manager's session map
+		// that is not included in the existingIds
 		for _, s := range server.GetManagerSessionMap(manager) {
 			if slices.Contains(existingIds, s.ID) {
 				continue
@@ -38,4 +41,3 @@ func ConnectAndFetchSession(t *testing.T, manager *server.Manager, wsURL string,
 
 	return clientConn, serverSession
 }
-

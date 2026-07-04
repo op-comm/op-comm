@@ -171,7 +171,6 @@ func (session *Session) Send(event protocol.ServerSentEvent) {
 
 	select {
 	case session.OutputBuffer <- event:
-		session.Manager.logger.Debug("sending event to session", "session_id", session.ID, "event", event)
 	default:
 		// reaching here means the output buffer is full
 		// which likely points to network issues on the client

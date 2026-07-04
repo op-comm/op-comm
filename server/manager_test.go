@@ -40,24 +40,23 @@ func TestManager_WSRequest(t *testing.T) {
 //TODO: test data lifecycle through manager (from inboundbuffer to socket)
 
 // TODO: add more session management test
-	//TODO: test that session is removed when socket is closed
+//TODO: test that session is removed when socket is closed
 //TODO: add stress test?
-
 
 func TestManager_HandlesCustomEvent(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	
-	 eventRan := make(chan struct{}, 1)
+
+	eventRan := make(chan struct{}, 1)
 	manager.On("toggle", func(event *protocol.ClientSentEvent, session *server.Session) {
 		// Will only ever send one signal (prevents blocking/errors for multiple calls)
-		select  {
+		select {
 		case eventRan <- struct{}{}:
 		default:
 		}
 	})
-	
-	ctx, cancel := context.WithCancel(context.Background()) 
+
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go manager.Run(ctx)
 
@@ -78,11 +77,11 @@ func TestManager_HandlesCustomEvent(t *testing.T) {
 func TestManager_HandlesCustomService(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	
+
 	eventRan := make(chan struct{}, 1)
 	customService := server.EventServiceFunc(func(action string, event *protocol.ClientSentEvent, session *server.Session) {
 		if action == "toggle" {
-			select  {
+			select {
 			case eventRan <- struct{}{}:
 			default:
 			}
@@ -90,8 +89,8 @@ func TestManager_HandlesCustomService(t *testing.T) {
 	})
 
 	manager.RegisterEventService("bool", customService)
-	
-	ctx, cancel := context.WithCancel(context.Background()) 
+
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go manager.Run(ctx)
 
@@ -100,7 +99,7 @@ func TestManager_HandlesCustomService(t *testing.T) {
 	testutil.WriteToConnection(t, clientConn, []byte(`
 		{ "type": "bool:toggle" }
 	`))
-	
+
 	select {
 	case <-eventRan:
 		return
@@ -203,17 +202,17 @@ func TestManager_MiddlewareAllowsEvent(t *testing.T) {
 	eventRan := make(chan struct{}, 1)
 
 	allowMiddleware := func(event *protocol.ClientSentEvent, session *server.Session) bool {
-		select  {
-			case middlewareRan<-struct{}{}:
-			default:
+		select {
+		case middlewareRan <- struct{}{}:
+		default:
 		}
 		return true
 	}
 
 	event := func(event *protocol.ClientSentEvent, session *server.Session) {
-		select  {
-			case eventRan<-struct{}{}:
-			default:
+		select {
+		case eventRan <- struct{}{}:
+		default:
 		}
 	}
 
@@ -233,15 +232,15 @@ func TestManager_MiddlewareAllowsEvent(t *testing.T) {
 	`))
 
 	select {
-		case <-middlewareRan:
-		case <-time.After(3 * time.Second):
-			t.Fatal("Middleware did not run when expected to")
+	case <-middlewareRan:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Middleware did not run when expected to")
 	}
 
 	select {
-		case <-eventRan:
-		case <-time.After(3 * time.Second):
-			t.Fatal("Event did not run when expected to")
+	case <-eventRan:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Event did not run when expected to")
 	}
 }
 
@@ -250,20 +249,19 @@ func TestManager_MiddlewareDeniesEvent(t *testing.T) {
 	eventBuffer := make(chan *protocol.ClientSentEvent, 1)
 
 	denyMiddleware := func(event *protocol.ClientSentEvent, session *server.Session) bool {
-		select  {
-			case middlewareRan<-struct{}{}:
-			default:
+		select {
+		case middlewareRan <- struct{}{}:
+		default:
 		}
 		return event.EventType != "denied_event"
 	}
 
 	eventHandler := func(event *protocol.ClientSentEvent, session *server.Session) {
-		select  {
-		case eventBuffer<-event:
-			default:
+		select {
+		case eventBuffer <- event:
+		default:
 		}
 	}
-	
 
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
@@ -285,21 +283,21 @@ func TestManager_MiddlewareDeniesEvent(t *testing.T) {
 		{ "type": "allowed_event" }
 	`))
 	select {
-		case <-middlewareRan:
-		case <-time.After(3 * time.Second):
-			t.Fatal("Middleware did not run when expected to")
+	case <-middlewareRan:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Middleware did not run when expected to")
 	}
 
 	select {
-	case eventThatRan := <- eventBuffer:
+	case eventThatRan := <-eventBuffer:
 		if eventThatRan.EventType == "denied_event" {
 			t.Fatalf("Event ran when expected not to")
 		}
 		if eventThatRan.EventType != "allowed_event" {
 			t.Fatalf("allowed_event did not run when expected to")
 		}
-		case <-time.After(1 * time.Second):
-			t.Fatalf("Expected allowed_event to run, did not run within duration")
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Expected allowed_event to run, did not run within duration")
 	}
 
 }
