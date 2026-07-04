@@ -55,18 +55,24 @@ func (session *Session) readPump() {
 
 		_, byteData, err := session.connection.Read(context.Background())
 		if err != nil {
+			closeStatus := websocket.CloseStatus(err)
+			if closeStatus == websocket.StatusNormalClosure || closeStatus == websocket.StatusGoingAway {
+				session.Manager.logger.Debug("client disconnected", "session_id", session.ID)
+			} else {
+				session.Manager.logger.Error("failed to read from socket", "error", err, "session_id", session.ID)
+			}
 			break
 		}
 		var event protocol.ClientSentEvent
 
 		unmarshalErr := json.Unmarshal(byteData, &event)
 		if unmarshalErr != nil {
-			fmt.Printf("Invalid Message\n")
+			session.Manager.logger.Warn("received invalid message", "error", unmarshalErr, "session_id", session.ID)
 			continue //ignore invalid messages
 		}
 
 		session.Manager.logger.Debug("received data from session", "session_id", session.ID, "event", event)
-		
+
 		session.Manager.InboundBuffer <- SessionEventWrapper{
 			Event:   &event,
 			Session: session,

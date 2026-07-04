@@ -37,7 +37,7 @@ func SetupTestServer(t *testing.T) (*server.Manager, string, func()) {
 	return manager, wsURL, cleanup
 }
 
-func ConnectToServer(t *testing.T, manager *server.Manager, wsURL string) *websocket.Conn{
+func ConnectToServer(t *testing.T, manager *server.Manager, wsURL string) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -46,12 +46,12 @@ func ConnectToServer(t *testing.T, manager *server.Manager, wsURL string) *webso
 		t.Fatalf("Unexpected error when dialing server: %v", err)
 	}
 	return conn
-	
+
 }
 
-func WriteToConnection(t *testing.T, conn *websocket.Conn, data []byte){
+func WriteToConnection(t *testing.T, conn *websocket.Conn, data []byte) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	writeErr := conn.Write(ctx, websocket.MessageText, data)
 	if writeErr != nil {

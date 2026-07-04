@@ -1,35 +1,41 @@
-package server
+package server_test
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"strings"
+	"context"
+	"slices"
 	"testing"
-	"time"
+
+	"github.com/coder/websocket"
+	"github.com/op-comm/op-comm/server"
+	"github.com/op-comm/op-comm/testutil"
 )
 
-var SMALL_DELAY time.Duration = 10 * time.Millisecond
-
-// creates a server with manager.HandleWSUpgradeRequest HandlerFunc
-func setupTestServer(t *testing.T) (*Manager, string, func()) {
-	t.Helper()
-	manager := NewManager()
-	server := httptest.NewServer(http.HandlerFunc(manager.HandleWSUpgradeRequest))
-	wsURL := strings.Replace(server.URL, "http", "ws", 1)
-	cleanup := func() {
-		server.Close()
+func ConnectAndFetchSession(t *testing.T, manager *server.Manager, wsURL string, existingIds []string) (*websocket.Conn, *server.Session) {
+	ctx := context.Background()
+	clientConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("Unexpected Server Error: Failed to connect to ws: %v", err)
 	}
 
-	return manager, wsURL, cleanup
-}
-
-func pollEvent(t *testing.T, delay time.Duration, retries int, callback func() bool) bool {
-	t.Helper()
-	for range retries {
-		if callback() {
+	var serverSession *server.Session
+	managerCreatedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
+		sessionMutex := server.GetManagerSessionMutex(manager)
+		sessionMutex.RLock()
+		defer sessionMutex.RUnlock()
+		for _, s := range server.GetManagerSessionMap(manager) {
+			if slices.Contains(existingIds, s.ID) {
+				continue
+			}
+			serverSession = s
 			return true
 		}
-		time.Sleep(delay)
+		return false
+	})
+
+	if !managerCreatedSession {
+		t.Fatal("Server failed to create session in time")
 	}
-	return false
+
+	return clientConn, serverSession
 }
+
