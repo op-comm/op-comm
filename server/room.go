@@ -12,6 +12,7 @@ type Room interface {
 	AddSession(session *Session)
 	RemoveSession(session *Session) int
 	HasSession(session *Session) bool
+	SessionCount() int
 	Cleanup()
 	Broadcast(event protocol.ServerSentEvent)
 	BroadcastToOthers(event protocol.ServerSentEvent, senderID string)
@@ -58,6 +59,12 @@ func (room *InMemoryRoom) HasSession(targetSession *Session) bool {
 	defer room.sessionMutex.RUnlock()
 	_, exists := room.sessions[targetSession.ID]
 	return exists
+}
+
+func (room *InMemoryRoom) SessionCount() int {
+	room.sessionMutex.RLock()
+	defer room.sessionMutex.RUnlock()
+	return len(room.sessions)
 }
 
 func (room *InMemoryRoom) Cleanup() {

@@ -18,7 +18,7 @@ func TestRoom_IsRemovedWhenLastSessionIsRemoved(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	_, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	_, session := testutil.ConnectToServer(t, manager, wsURL)
 
 	room := manager.CreateRoom("test_room")
 
@@ -43,8 +43,8 @@ func TestRoom_IsNotRemovedWhenAnotherSessionRemains(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	_, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
-	_, session2 := ConnectAndFetchSession(t, manager, wsURL, []string{session.ID})
+	_, session := testutil.ConnectToServer(t, manager, wsURL)
+	_, session2 := testutil.ConnectToServer(t, manager, wsURL)
 
 	room := manager.CreateRoom("test_room")
 
@@ -85,7 +85,7 @@ func TestRoom_BroadcastReachesAllSessions(t *testing.T) {
 	existingIds := []string{}
 	clientConnections := []*websocket.Conn{}
 	for range SESSION_COUNT {
-		connection, session := ConnectAndFetchSession(t, manager, wsURL, existingIds)
+		connection, session := testutil.ConnectToServer(t, manager, wsURL)
 		defer connection.Close(websocket.StatusNormalClosure, "")
 		existingIds = append(existingIds, session.ID)
 		clientConnections = append(clientConnections, connection)
@@ -125,7 +125,7 @@ func TestRoom_BroadcastToSlowClientCausesDisconnect(t *testing.T) {
 	//ignore for this test
 	manager.SetLogger(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{})))
 
-	_, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	_, session := testutil.ConnectToServer(t, manager, wsURL)
 
 	room := manager.CreateRoom("test_room")
 

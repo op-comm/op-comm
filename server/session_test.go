@@ -18,7 +18,7 @@ func TestSession_Close(t *testing.T) {
 	defer cleanup()
 	ctx, cancel := context.WithTimeout(context.Background(), testutil.TEST_READ_TIMEOUT)
 	defer cancel()
-	clientConnection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
 	go session.Close(websocket.StatusNormalClosure, "session closed")
 
 	_, _, readErr := clientConnection.Read(ctx)
@@ -35,7 +35,7 @@ func TestSession_Close(t *testing.T) {
 func TestSession_ReadPumpForwardsDataToManager(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	clientConnection := testutil.ConnectToServer(t, manager, wsURL)
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
 	defer clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	expectedType := "test:data"
@@ -56,7 +56,7 @@ func TestSession_WritePumpSendsDataToSocket(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	clientConnection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
 	defer clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	expectedType := "test:data"
@@ -88,7 +88,7 @@ func TestSession_WritePumpSendsDataToSocket(t *testing.T) {
 func TestSession_IsRemovedFromManagerOnSocketClose(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	clientConnection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
 	clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	managerDeletedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
@@ -109,7 +109,7 @@ func TestSession_IgnoresInvalidJSON(t *testing.T) {
 
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	clientConnection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
 	defer clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	testutil.WriteToConnection(t, clientConnection, []byte(`"Data"`))
@@ -145,7 +145,7 @@ func TestSession_IsRemovedWhenBufferFull(t *testing.T) {
 	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	clientConnection, session := ConnectAndFetchSession(t, manager, wsURL, []string{})
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
 	defer clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	//this needs to exceed buffer size

@@ -108,10 +108,15 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 			return
 		}
 	}
+
+	clientID := manager.clientIDMethod(request)
+	writer.Header().Set("Op-Comm-Session-ID", clientID)
+
 	options := &websocket.AcceptOptions{}
 	if len(manager.allowedOrigins) > 0 {
 		options.OriginPatterns = manager.allowedOrigins
 	}
+
 	connection, err := websocket.Accept(writer, request, options)
 	if err != nil {
 		manager.logger.Warn("client failed to connect", "error", err)
@@ -119,7 +124,6 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	}
 
 	clientCtx, cancel := context.WithCancel(context.Background())
-	clientID := manager.clientIDMethod(request)
 	clientSession := NewSession(clientID, connection, manager, cancel)
 
 	if authState != nil {
@@ -280,6 +284,26 @@ func (manager *Manager) sessionCount() int {
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	return len(manager.sessions)
+}
+
+func (manager *Manager) GetSessionIDs() []string {
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+	sessionIDs := make([]string, len(manager.sessions))
+
+	index := 0
+	for id := range manager.sessions {
+		sessionIDs[index] = id
+		index++
+	}
+	return sessionIDs
+
+}
+
+func (manager *Manager) GetSession(id string) *Session {
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+	return manager.sessions[id]
 }
 
 func (manager *Manager) GetRoom(roomID string) Room {

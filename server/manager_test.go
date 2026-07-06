@@ -60,9 +60,8 @@ func TestManager_HandlesCustomEvent(t *testing.T) {
 	defer cancel()
 	go manager.Run(ctx)
 
-	clientConn := testutil.ConnectToServer(t, manager, wsURL)
-
-	testutil.WriteToConnection(t, clientConn, []byte(`
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
+	testutil.WriteToConnection(t, clientConnection, []byte(`
 		{ "type": "toggle" }
 	`))
 
@@ -94,9 +93,9 @@ func TestManager_HandlesCustomService(t *testing.T) {
 	defer cancel()
 	go manager.Run(ctx)
 
-	clientConn := testutil.ConnectToServer(t, manager, wsURL)
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
 
-	testutil.WriteToConnection(t, clientConn, []byte(`
+	testutil.WriteToConnection(t, clientConnection, []byte(`
 		{ "type": "bool:toggle" }
 	`))
 
@@ -225,9 +224,9 @@ func TestManager_MiddlewareAllowsEvent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go manager.Run(ctx)
-	clientConn := testutil.ConnectToServer(t, manager, wsURL)
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
 
-	testutil.WriteToConnection(t, clientConn, []byte(`
+	testutil.WriteToConnection(t, clientConnection, []byte(`
 		{ "type": "test_event" }
 	`))
 
@@ -273,13 +272,13 @@ func TestManager_MiddlewareDeniesEvent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go manager.Run(ctx)
-	clientConn := testutil.ConnectToServer(t, manager, wsURL)
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
 
-	testutil.WriteToConnection(t, clientConn, []byte(`
+	testutil.WriteToConnection(t, clientConnection, []byte(`
 		{ "type": "denied_event" }
 	`))
 
-	testutil.WriteToConnection(t, clientConn, []byte(`
+	testutil.WriteToConnection(t, clientConnection, []byte(`
 		{ "type": "allowed_event" }
 	`))
 	select {

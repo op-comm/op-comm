@@ -36,17 +36,25 @@ func SetupTestServer(t *testing.T) (*server.Manager, string, func()) {
 
 	return manager, wsURL, cleanup
 }
-
-func ConnectToServer(t *testing.T, manager *server.Manager, wsURL string) *websocket.Conn {
+func ConnectMultipleToServer(t *testing.T, manager *server.Manager, wsURL string, count int) []*websocket.Conn {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	if err != nil {
-		t.Fatalf("Unexpected error when dialing server: %v", err)
+	if count <= 0 {
+		t.Fatalf("Invalid count for ConnectMultipleToServer func, expected a positive integer")
+		return []*websocket.Conn{}
 	}
-	return conn
 
+	connectionList := make([]*websocket.Conn, count)
+	for i := range count {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		conn, _, err := websocket.Dial(ctx, wsURL, nil)
+		if err != nil {
+			t.Fatalf("Unexpected error when dialing server: %v", err)
+		}
+
+		connectionList[i] = conn
+	}
+	return connectionList
 }
 
 func WriteToConnection(t *testing.T, conn *websocket.Conn, data []byte) {
@@ -57,6 +65,28 @@ func WriteToConnection(t *testing.T, conn *websocket.Conn, data []byte) {
 	if writeErr != nil {
 		t.Fatalf("Failed to write to socket: %v", writeErr)
 	}
+}
+
+func ConnectToServer(t *testing.T, manager *server.Manager, wsURL string) (*websocket.Conn, *server.Session) {
+	t.Helper()
+	ctx := context.Background()
+	clientConn, response, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("Unexpected Server Error: Failed to connect to ws: %v", err)
+	}
+
+	sessionID := response.Header.Get("Op-Comm-Session-ID")
+	managerCreatedSession := PollEvent(t, SMALL_DELAY, 10, func() bool {
+		return manager.GetSession(sessionID) != nil
+
+	})
+
+	if !managerCreatedSession {
+		t.Fatal("Server failed to create session in time")
+	}
+
+	serverSession := manager.GetSession(sessionID)
+	return clientConn, serverSession
 }
 
 func PollEvent(t *testing.T, delay time.Duration, retries int, callback func() bool) bool {
