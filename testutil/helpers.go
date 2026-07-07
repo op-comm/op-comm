@@ -2,6 +2,8 @@ package testutil
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +19,17 @@ import (
 var SMALL_DELAY time.Duration = 10 * time.Millisecond
 var TEST_WRITE_TIMEOUT time.Duration = 5 * time.Second
 var TEST_READ_TIMEOUT time.Duration = 5 * time.Second
+
+func PollEvent(t *testing.T, delay time.Duration, retries int, callback func() bool) bool {
+	t.Helper()
+	for range retries {
+		if callback() {
+			return true
+		}
+		time.Sleep(delay)
+	}
+	return false
+}
 
 // creates a server with manager.HandleWSUpgradeRequest HandlerFunc
 func SetupTestServer(t *testing.T) (*server.Manager, string, func()) {
@@ -89,13 +102,44 @@ func ConnectToServer(t *testing.T, manager *server.Manager, wsURL string) (*webs
 	return clientConn, serverSession
 }
 
-func PollEvent(t *testing.T, delay time.Duration, retries int, callback func() bool) bool {
+func ReadFromConnection(t *testing.T, connection *websocket.Conn) []byte {
 	t.Helper()
-	for range retries {
-		if callback() {
-			return true
-		}
-		time.Sleep(delay)
+	readCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, data, readErr := connection.Read(readCtx)
+	if readErr != nil {
+		t.Fatalf("unexpected read error: %v", readErr)
 	}
-	return false
+
+	return data
+}
+
+// flushes the buffer up to the target event and returns the data for target event. Errors if no type exists in the buffer
+func WaitForEvent(t *testing.T, connection *websocket.Conn, targetType string) []byte {
+	t.Helper()
+	for {
+		readCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		_, data, readErr := connection.Read(readCtx)
+
+		if readErr != nil {
+			if errors.Is(readErr, context.DeadlineExceeded) {
+				t.Fatalf("timed out waiting for event of type: %s", targetType)
+			}
+			t.Fatalf("unexpected read error: %v", readErr)
+		}
+
+		var response struct {
+			EventType string `json:"type"`
+		}
+
+		jsonErr := json.Unmarshal(data, &response)
+		if jsonErr != nil {
+			t.Fatalf("unexpected json error: %v", jsonErr)
+		}
+		if response.EventType == targetType {
+			return data
+		}
+	}
+
 }

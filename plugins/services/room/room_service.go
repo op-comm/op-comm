@@ -1,4 +1,4 @@
-package services
+package room
 
 import (
 	"encoding/json"
@@ -66,22 +66,6 @@ func NewRoomService(manager *server.Manager, serviceOptions ...RoomOption) (*Roo
 	return &roomService, nil
 }
 
-type BaseRoomRequest struct {
-	RoomID string `json:"room_id"`
-}
-type BaseRoomReply struct {
-	RoomID string `json:"room_id"`
-	Status string `json:"status"`
-}
-type BaseRoomBroadcast struct {
-	RoomID string `json:"room_id"`
-	UserID string `json:"user_id,omitempty"`
-}
-
-type RoomListReply struct {
-	Rooms []string `json:"rooms"`
-}
-
 func (service *RoomService) Handle(action string, event *protocol.ClientSentEvent, session *server.Session) {
 
 	if len(event.Data) == 0 && action != "list" {
@@ -108,7 +92,7 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 		return
 	}
 
-	// custom actions have priority allows to override our defaults
+	// custom actions have priority, allows to override our defaults
 	handler, exists := service.Handlers[action]
 	if exists {
 		handler(room, event, session)
@@ -131,7 +115,6 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 		}, session.ID)
 		session.Reply(event, BaseRoomReply{
 			RoomID: roomID,
-			Status: "ACK",
 		}, "")
 	case "delete":
 		service.Manager.DeleteRoom(roomID)
@@ -144,7 +127,6 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 
 		session.Reply(event, BaseRoomReply{
 			RoomID: roomID,
-			Status: "ACK",
 		}, "")
 
 	case "join":
@@ -159,7 +141,6 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 
 		session.Reply(event, BaseRoomReply{
 			RoomID: roomID,
-			Status: "ACK",
 		}, "")
 
 	case "leave":
@@ -174,7 +155,6 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 
 		session.Reply(event, BaseRoomReply{
 			RoomID: roomID,
-			Status: "ACK",
 		}, "")
 	default:
 		session.Reply(event, nil, fmt.Sprintf("Unknown action: %s", action))
