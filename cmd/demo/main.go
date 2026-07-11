@@ -12,13 +12,12 @@ import (
 func main() {
 	manager := server.NewManager()
 	manager.SetAllowedOrigins([]string{"http://localhost:5173"})
-	manager.On("test:echo", func(event *protocol.ClientSentEvent, session *server.Session) {
+	manager.On("test:echo", func(event *protocol.Request, session *server.Session) {
 		fmt.Printf("Receieved echo request from %s: %v\n", session.ID, event.Data)
-
-		session.OutputBuffer <- protocol.ServerSentEvent{
-			EventType: "test:echo_response",
-			Data:      event.Data,
-		}
+		session.Send(protocol.Broadcast{
+			Type: "test:echo_response",
+			Data: event.Data,
+		})
 	})
 
 	http.HandleFunc("/ws", manager.HandleWSUpgradeRequest)

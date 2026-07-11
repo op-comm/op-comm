@@ -48,7 +48,7 @@ func TestManager_HandlesCustomEvent(t *testing.T) {
 	defer cleanup()
 
 	eventRan := make(chan struct{}, 1)
-	manager.On("toggle", func(event *protocol.ClientSentEvent, session *server.Session) {
+	manager.On("toggle", func(event *protocol.Request, session *server.Session) {
 		// Will only ever send one signal (prevents blocking/errors for multiple calls)
 		select {
 		case eventRan <- struct{}{}:
@@ -78,7 +78,7 @@ func TestManager_HandlesCustomService(t *testing.T) {
 	defer cleanup()
 
 	eventRan := make(chan struct{}, 1)
-	customService := server.EventServiceFunc(func(action string, event *protocol.ClientSentEvent, session *server.Session) {
+	customService := server.EventServiceFunc(func(action string, event *protocol.Request, session *server.Session) {
 		if action == "toggle" {
 			select {
 			case eventRan <- struct{}{}:
@@ -200,7 +200,7 @@ func TestManager_MiddlewareAllowsEvent(t *testing.T) {
 	middlewareRan := make(chan struct{}, 1)
 	eventRan := make(chan struct{}, 1)
 
-	allowMiddleware := func(event *protocol.ClientSentEvent, session *server.Session) bool {
+	allowMiddleware := func(event *protocol.Request, session *server.Session) bool {
 		select {
 		case middlewareRan <- struct{}{}:
 		default:
@@ -208,7 +208,7 @@ func TestManager_MiddlewareAllowsEvent(t *testing.T) {
 		return true
 	}
 
-	event := func(event *protocol.ClientSentEvent, session *server.Session) {
+	event := func(event *protocol.Request, session *server.Session) {
 		select {
 		case eventRan <- struct{}{}:
 		default:
@@ -245,17 +245,17 @@ func TestManager_MiddlewareAllowsEvent(t *testing.T) {
 
 func TestManager_MiddlewareDeniesEvent(t *testing.T) {
 	middlewareRan := make(chan struct{}, 1)
-	eventBuffer := make(chan *protocol.ClientSentEvent, 1)
+	eventBuffer := make(chan *protocol.Request, 1)
 
-	denyMiddleware := func(event *protocol.ClientSentEvent, session *server.Session) bool {
+	denyMiddleware := func(event *protocol.Request, session *server.Session) bool {
 		select {
 		case middlewareRan <- struct{}{}:
 		default:
 		}
-		return event.EventType != "denied_event"
+		return event.Type != "denied_event"
 	}
 
-	eventHandler := func(event *protocol.ClientSentEvent, session *server.Session) {
+	eventHandler := func(event *protocol.Request, session *server.Session) {
 		select {
 		case eventBuffer <- event:
 		default:
@@ -289,10 +289,10 @@ func TestManager_MiddlewareDeniesEvent(t *testing.T) {
 
 	select {
 	case eventThatRan := <-eventBuffer:
-		if eventThatRan.EventType == "denied_event" {
+		if eventThatRan.Type == "denied_event" {
 			t.Fatalf("Event ran when expected not to")
 		}
-		if eventThatRan.EventType != "allowed_event" {
+		if eventThatRan.Type != "allowed_event" {
 			t.Fatalf("allowed_event did not run when expected to")
 		}
 	case <-time.After(1 * time.Second):

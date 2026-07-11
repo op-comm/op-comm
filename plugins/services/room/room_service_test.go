@@ -102,8 +102,8 @@ func TestRoomService_CreatesRoomOnRequest(t *testing.T) {
 		t.Fatalf("Unexpected json error: %v", jsonErr)
 	}
 
-	if response.EventType != "room:create:reply" {
-		t.Fatalf("Mismatching event type.\n expected: room:create:reply\n got: %s", response.EventType)
+	if response.EventType != "room:create:response" {
+		t.Fatalf("Mismatching event type.\n expected: room:create:response\n got: %s", response.EventType)
 	}
 
 	if response.Data.RoomID != "test-room" {
@@ -298,7 +298,7 @@ func TestRoomService_ReturnsErrorOnUnknownType(t *testing.T) {
 		t.Fatalf("Unexpected read error: %v", readErr)
 	}
 
-	var response protocol.ServerSentEvent
+	var response protocol.Response
 
 	jsonErr := json.Unmarshal(data, &response)
 	if jsonErr != nil {

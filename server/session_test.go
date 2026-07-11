@@ -44,8 +44,8 @@ func TestSession_ReadPumpForwardsDataToManager(t *testing.T) {
 
 	select {
 	case receivedData := <-manager.InboundBuffer:
-		if receivedData.Event.EventType != expectedType {
-			t.Fatalf("Expected eventType to be %v, got %v", expectedType, receivedData.Event.EventType)
+		if receivedData.Event.Type != expectedType {
+			t.Fatalf("Expected eventType to be %v, got %v", expectedType, receivedData.Event.Type)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("Expected manager's Inbound buffer to contain written data")
@@ -60,8 +60,8 @@ func TestSession_WritePumpSendsDataToSocket(t *testing.T) {
 	defer clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	expectedType := "test:data"
-	serverEvent := protocol.ServerSentEvent{
-		EventType: expectedType,
+	serverEvent := protocol.Response{
+		Type: expectedType,
 	}
 	session.Send(serverEvent)
 
@@ -73,15 +73,15 @@ func TestSession_WritePumpSendsDataToSocket(t *testing.T) {
 		t.Fatalf("Unexpected Read Error: expected successful read operation")
 	}
 
-	var event protocol.ServerSentEvent
+	var event protocol.Response
 	jsonErr := json.Unmarshal(data, &event)
 
 	if jsonErr != nil {
 		t.Fatalf("Unexpected JSON Error: expected json.Unmarshal to have no errors")
 	}
 
-	if event.EventType != expectedType {
-		t.Fatalf("Expected eventType to be %v, got %v", expectedType, event.EventType)
+	if event.Type != expectedType {
+		t.Fatalf("Expected eventType to be %v, got %v", expectedType, event.Type)
 	}
 }
 
@@ -119,8 +119,8 @@ func TestSession_IgnoresInvalidJSON(t *testing.T) {
 
 	select {
 	case wrapper := <-manager.InboundBuffer:
-		if wrapper.Event.EventType != expectedType {
-			t.Fatalf("expected the first event in manager buffer to have type %v got %v", expectedType, wrapper.Event.EventType)
+		if wrapper.Event.Type != expectedType {
+			t.Fatalf("expected the first event in manager buffer to have type %v got %v", expectedType, wrapper.Event.Type)
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatalf("expected valid data to be passed to manager")
@@ -150,7 +150,7 @@ func TestSession_IsRemovedWhenBufferFull(t *testing.T) {
 
 	//this needs to exceed buffer size
 	for range 1000 {
-		session.Send(protocol.ServerSentEvent{})
+		session.Send(protocol.Response{})
 	}
 
 	managerDeletedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {

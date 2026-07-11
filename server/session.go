@@ -21,7 +21,7 @@ var MAX_BUFFER_EVENTS_BEFORE_DISCONNECT int = 512
 var WRITE_TIMEOUT = 10 * time.Second
 
 type SessionEventWrapper struct {
-	Event   *protocol.ClientSentEvent
+	Event   *protocol.Request
 	Session *Session
 }
 
@@ -29,7 +29,7 @@ type Session struct {
 	ID           string
 	connection   *websocket.Conn
 	Manager      *Manager
-	OutputBuffer chan protocol.ServerSentEvent
+	OutputBuffer chan []byte
 	cancel       context.CancelFunc
 
 	RoomIDs *internal.ConcurrentSet[string]
@@ -47,7 +47,7 @@ func NewSession(id string, connection *websocket.Conn, manager *Manager, cancel 
 		connection:   connection,
 		Manager:      manager,
 		cancel:       cancel,
-		OutputBuffer: make(chan protocol.ServerSentEvent, MAX_BUFFER_EVENTS_BEFORE_DISCONNECT),
+		OutputBuffer: make(chan []byte, MAX_BUFFER_EVENTS_BEFORE_DISCONNECT),
 		state:        make(map[string]any),
 		stateMutex:   sync.RWMutex{},
 		RoomIDs:      internal.NewConcurrentSet[string](),
@@ -79,7 +79,7 @@ func (session *Session) readPump() {
 			}
 			break
 		}
-		var event protocol.ClientSentEvent
+		var event protocol.Request
 
 		unmarshalErr := json.Unmarshal(byteData, &event)
 		if unmarshalErr != nil {
@@ -108,12 +108,7 @@ func (session *Session) writePump(ctx context.Context) {
 		case <-ctx.Done():
 			return
 
-		case event := <-session.OutputBuffer:
-			byteData, marshalErr := json.Marshal(event)
-			if marshalErr != nil {
-				fmt.Printf("Failed to marshal")
-				continue
-			}
+		case byteData := <-session.OutputBuffer:
 			writeCtx, cancel := context.WithTimeout(ctx, WRITE_TIMEOUT)
 			err := session.connection.Write(writeCtx, websocket.MessageText, byteData)
 			cancel()
@@ -163,14 +158,20 @@ func (session *Session) CopyIntoState(pairs map[string]any) {
 	}
 }
 
-func (session *Session) Send(event protocol.ServerSentEvent) {
+func (session *Session) Send(data any) {
 
 	if session.isClosed.Load() {
 		return
 	}
 
+	byteData, err := json.Marshal(data)
+	if err != nil {
+		session.Manager.logger.Error("Failed to marshal outgoing message", "error", err, "data", data)
+		return
+	}
+
 	select {
-	case session.OutputBuffer <- event:
+	case session.OutputBuffer <- byteData:
 	default:
 		// reaching here means the output buffer is full
 		// which likely points to network issues on the client
@@ -179,17 +180,17 @@ func (session *Session) Send(event protocol.ServerSentEvent) {
 	}
 }
 
-func (session *Session) Reply(request *protocol.ClientSentEvent, data interface{}, err string) {
+func (session *Session) Respond(request *protocol.Request, data interface{}, err string) {
 
 	if session.isClosed.Load() {
 		return
 	}
 
-	response := protocol.ServerSentEvent{
-		EventType: request.EventType + ":reply",
-		RequestID: request.RequestID,
-		Data:      data,
-		Error:     err,
+	response := protocol.Response{
+		Type:  request.Type + ":response",
+		ID:    request.ID,
+		Data:  data,
+		Error: err,
 	}
 	session.Send(response)
 

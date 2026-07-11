@@ -92,12 +92,12 @@ func TestRoom_BroadcastReachesAllSessions(t *testing.T) {
 		room.AddSession(session)
 	}
 
-	expectedEvent := protocol.ServerSentEvent{
-		EventType: "room:test",
+	expectedEvent := protocol.Broadcast{
+		Type: "room:test",
 	}
 	room.Broadcast(expectedEvent)
 
-	var event protocol.ServerSentEvent
+	var event protocol.Broadcast
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
@@ -111,8 +111,8 @@ func TestRoom_BroadcastReachesAllSessions(t *testing.T) {
 			t.Fatalf("Failed to unmarshal json: %v", unmarshalErr)
 		}
 
-		if event.EventType != expectedEvent.EventType {
-			t.Fatalf("Recieved Event does not match expected event: expected %s, got %s", expectedEvent.EventType, event.EventType)
+		if event.Type != expectedEvent.Type {
+			t.Fatalf("Recieved Event does not match expected event: expected %s, got %s", expectedEvent.Type, event.Type)
 		}
 	}
 
@@ -135,9 +135,9 @@ func TestRoom_BroadcastToSlowClientCausesDisconnect(t *testing.T) {
 		t.Fatal("Failed to create room")
 	}
 
-	event := protocol.ServerSentEvent{
-		EventType: "test:spam",
-		Data:      []byte(`"data"`),
+	event := protocol.Broadcast{
+		Type: "test:spam",
+		Data: []byte(`"data"`),
 	}
 	// this number needs to exceed the buffer size
 	for range 1000 {

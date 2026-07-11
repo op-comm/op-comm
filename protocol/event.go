@@ -5,15 +5,20 @@ import "encoding/json"
 type Event struct {
 }
 
-type ClientSentEvent struct {
-	EventType string          `json:"type"`
-	Data      json.RawMessage `json:"data,omitempty"`
-	RequestID string          `json:"request_id,omitempty"`
+type Request struct {
+	ID   string          `json:"id"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data,omitempty"`
 }
 
-type ServerSentEvent struct {
-	EventType string `json:"type"`
-	Data      any    `json:"data,omitempty"`
-	RequestID string `json:"request_id,omitempty"`
-	Error     string `json:"error,omitempty"`
+type Response struct {
+	ID    string `json:"id"`
+	Type  string `json:"type"`
+	Error string `json:"error,omitempty"`
+	Data  any    `json:"data,omitempty"`
+}
+
+type Broadcast struct {
+	Type string `json:"type"`
+	Data any    `json:"data"`
 }

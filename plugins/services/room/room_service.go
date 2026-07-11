@@ -11,7 +11,7 @@ import (
 	"github.com/op-comm/op-comm/server"
 )
 
-type RoomHandler func(room server.Room, event *protocol.ClientSentEvent, session *server.Session)
+type RoomHandler func(room server.Room, event *protocol.Request, session *server.Session)
 type RoomOption func(*RoomService)
 
 func defaultRoomService() RoomService {
@@ -66,20 +66,20 @@ func NewRoomService(manager *server.Manager, serviceOptions ...RoomOption) (*Roo
 	return &roomService, nil
 }
 
-func (service *RoomService) Handle(action string, event *protocol.ClientSentEvent, session *server.Session) {
+func (service *RoomService) Handle(action string, event *protocol.Request, session *server.Session) {
 
 	if Command(action) == CommandList {
 		if authorizeErr := service.Authorizer.Authorize(session, nil, action); authorizeErr != nil {
-			session.Reply(event, nil, fmt.Sprintf("Unauthorized: %v", authorizeErr))
+			session.Respond(event, nil, fmt.Sprintf("Unauthorized: %v", authorizeErr))
 			return
 		}
-		session.Reply(event, RoomListResponse{Rooms: service.Manager.GetRoomIDs()}, "")
+		session.Respond(event, RoomListResponse{Rooms: service.Manager.GetRoomIDs()}, "")
 		return
 	}
 
 	emptyPayload := len(event.Data) == 0
 	if emptyPayload {
-		session.Reply(event, nil, string(ErrMissingPayload))
+		session.Respond(event, nil, string(ErrMissingPayload))
 		return
 	}
 
@@ -88,7 +88,7 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 	}
 
 	if jsonErr := json.Unmarshal(event.Data, &requestData); jsonErr != nil {
-		session.Reply(event, nil, string(ErrInvalidJSON))
+		session.Respond(event, nil, string(ErrInvalidJSON))
 		return
 	}
 
@@ -96,13 +96,13 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 	room := service.Manager.GetRoom(requestData.RoomID)
 
 	if room == nil && Command(action) != CommandCreate {
-		session.Reply(event, nil, string(ErrRoomNotFound))
+		session.Respond(event, nil, string(ErrRoomNotFound))
 		return
 	}
 
 	authorizeErr := service.Authorizer.Authorize(session, room, action)
 	if authorizeErr != nil {
-		session.Reply(event, nil, fmt.Sprintf("Unauthorized: %v", authorizeErr))
+		session.Respond(event, nil, fmt.Sprintf("Unauthorized: %v", authorizeErr))
 		return
 	}
 
@@ -117,53 +117,53 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 	switch Command(action) {
 
 	case CommandList:
-		session.Reply(event, RoomListResponse{Rooms: service.Manager.GetRoomIDs()}, "")
+		session.Respond(event, RoomListResponse{Rooms: service.Manager.GetRoomIDs()}, "")
 
 	case CommandCreate:
 		room = service.Manager.CreateRoom(roomID)
 		room.AddSession(session)
-		service.Manager.GlobalBroadcastToOthers(protocol.ServerSentEvent{
-			EventType: string(EventRoomCreated),
+		service.Manager.GlobalBroadcastToOthers(protocol.Broadcast{
+			Type: string(EventRoomCreated),
 			Data: RoomCreatedBroadcast{
 				RoomID: roomID,
 			},
 		}, session.ID)
-		session.Reply(event, RoomCreateResponse{RoomID: roomID}, "")
+		session.Respond(event, RoomCreateResponse{RoomID: roomID}, "")
 	case CommandDelete:
 		service.Manager.DeleteRoom(roomID)
-		room.BroadcastToOthers(protocol.ServerSentEvent{
-			EventType: string(EventRoomDeleted),
+		room.BroadcastToOthers(protocol.Broadcast{
+			Type: string(EventRoomDeleted),
 			Data: RoomDeletedBroadcast{
 				RoomID: roomID,
 			},
 		}, session.ID)
 
-		session.Reply(event, RoomDeleteResponse{RoomID: roomID}, "")
+		session.Respond(event, RoomDeleteResponse{RoomID: roomID}, "")
 
 	case CommandJoin:
 		room.AddSession(session)
-		room.BroadcastToOthers(protocol.ServerSentEvent{
-			EventType: string(EventUserJoined),
+		room.BroadcastToOthers(protocol.Broadcast{
+			Type: string(EventUserJoined),
 			Data: RoomUserJoinedBroadcast{
 				RoomID: roomID,
 				UserID: session.ID,
 			},
 		}, session.ID)
 
-		session.Reply(event, RoomJoinResponse{RoomID: roomID}, "")
+		session.Respond(event, RoomJoinResponse{RoomID: roomID}, "")
 
 	case CommandLeave:
 		room.RemoveSession(session)
-		room.BroadcastToOthers(protocol.ServerSentEvent{
-			EventType: string(EventUserLeft),
+		room.BroadcastToOthers(protocol.Broadcast{
+			Type: string(EventUserLeft),
 			Data: RoomUserLeftBroadcast{
 				RoomID: roomID,
 				UserID: session.ID,
 			},
 		}, session.ID)
 
-		session.Reply(event, RoomLeaveResponse{RoomID: roomID}, "")
+		session.Respond(event, RoomLeaveResponse{RoomID: roomID}, "")
 	default:
-		session.Reply(event, nil, fmt.Sprintf("Unknown action: %s", action))
+		session.Respond(event, nil, fmt.Sprintf("Unknown action: %s", action))
 	}
 }

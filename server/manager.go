@@ -153,7 +153,7 @@ func (manager *Manager) RegisterEventService(namespace string, service EventServ
 	manager.services[namespace] = service
 }
 
-func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
+func (manager *Manager) GlobalBroadcast(event protocol.Broadcast) {
 	manager.logger.Debug("global broadcast", "event", event)
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
@@ -162,7 +162,7 @@ func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
 	}
 }
 
-func (manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, senderID string) {
+func (manager *Manager) GlobalBroadcastToOthers(event protocol.Broadcast, senderID string) {
 	manager.logger.Debug("global broadcast from sender", "event", event, "sender_id", senderID)
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
@@ -174,7 +174,7 @@ func (manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, 
 
 }
 
-func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string) {
+func (manager *Manager) GlobalBroadcastExclude(event protocol.Broadcast, sessionIdsToExclude []string) {
 	manager.logger.Debug("global broadcast exclude", "event", event, "exclude_count", len(sessionIdsToExclude))
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
@@ -186,7 +186,7 @@ func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, s
 	}
 }
 
-func (manager *Manager) SendToOnly(event protocol.ServerSentEvent, sessionIds []string) {
+func (manager *Manager) SendToOnly(event protocol.Broadcast, sessionIds []string) {
 	manager.logger.Debug("sending event to sessions", "event", event, "session_count", len(sessionIds))
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
@@ -213,13 +213,13 @@ func (manager *Manager) handleEvent(wrapper SessionEventWrapper) {
 		}
 	}
 
-	if handler, exists := manager.handlers[event.EventType]; exists {
+	if handler, exists := manager.handlers[event.Type]; exists {
 		manager.logger.Debug("executing handler for event", "event", event)
 		handler(event, session)
 		return
 	}
 
-	eventType := event.EventType
+	eventType := event.Type
 	typeSplit := strings.SplitN(eventType, ":", 2)
 	if len(typeSplit) < 2 {
 		return

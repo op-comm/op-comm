@@ -14,10 +14,10 @@ type Room interface {
 	HasSession(session *Session) bool
 	SessionCount() int
 	Cleanup()
-	Broadcast(event protocol.ServerSentEvent)
-	BroadcastToOthers(event protocol.ServerSentEvent, senderID string)
-	BroadcastExclude(event protocol.ServerSentEvent, sessionIds []string)
-	SendToOnly(event protocol.ServerSentEvent, sessionIds []string)
+	Broadcast(event protocol.Broadcast)
+	BroadcastToOthers(event protocol.Broadcast, senderID string)
+	BroadcastExclude(event protocol.Broadcast, sessionIds []string)
+	SendToOnly(event protocol.Broadcast, sessionIds []string)
 }
 type InMemoryRoom struct {
 	sessions     map[string]*Session
@@ -76,7 +76,7 @@ func (room *InMemoryRoom) Cleanup() {
 	}
 }
 
-func (room *InMemoryRoom) Broadcast(event protocol.ServerSentEvent) {
+func (room *InMemoryRoom) Broadcast(event protocol.Broadcast) {
 	room.logger.Debug("room broadcast", "event", event)
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
@@ -85,7 +85,7 @@ func (room *InMemoryRoom) Broadcast(event protocol.ServerSentEvent) {
 	}
 }
 
-func (room *InMemoryRoom) BroadcastToOthers(event protocol.ServerSentEvent, senderID string) {
+func (room *InMemoryRoom) BroadcastToOthers(event protocol.Broadcast, senderID string) {
 	room.logger.Debug("room broadcast from sender", "event", event, "sender_id", senderID)
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
@@ -97,7 +97,7 @@ func (room *InMemoryRoom) BroadcastToOthers(event protocol.ServerSentEvent, send
 	}
 }
 
-func (room *InMemoryRoom) BroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string) {
+func (room *InMemoryRoom) BroadcastExclude(event protocol.Broadcast, sessionIdsToExclude []string) {
 	room.logger.Debug("room broadcast exclude", "event", event, "exclude_count", len(sessionIdsToExclude))
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
@@ -109,7 +109,7 @@ func (room *InMemoryRoom) BroadcastExclude(event protocol.ServerSentEvent, sessi
 	}
 }
 
-func (room *InMemoryRoom) SendToOnly(event protocol.ServerSentEvent, sessionIds []string) {
+func (room *InMemoryRoom) SendToOnly(event protocol.Broadcast, sessionIds []string) {
 	room.logger.Debug("room sending event to sessions", "event", event, "session_count", len(sessionIds))
 	room.sessionMutex.RLock()
 	defer room.sessionMutex.RUnlock()
