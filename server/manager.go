@@ -15,7 +15,7 @@ import (
 )
 
 type Manager struct {
-	InboundBuffer  chan sessionEventWrapper
+	InboundBuffer  chan SessionEventWrapper
 	sessions       map[string]*Session
 	sessionMutex   sync.RWMutex
 	clientIDMethod func(*http.Request) string
@@ -24,7 +24,7 @@ type Manager struct {
 	rooms          map[string]Room
 	roomMutex      sync.RWMutex
 	roomFactory    func(id string) Room
-	authenticator  Authenticator
+	authenticator  RequestAuthenticator
 	middlewares    []Middleware
 
 	allowedOrigins []string
@@ -34,7 +34,7 @@ type Manager struct {
 
 func NewManager() *Manager {
 	manager := &Manager{
-		InboundBuffer: make(chan sessionEventWrapper),
+		InboundBuffer: make(chan SessionEventWrapper),
 		sessions:      make(map[string]*Session),
 		sessionMutex:  sync.RWMutex{},
 		handlers:      make(map[string]EventHandler),
@@ -44,12 +44,12 @@ func NewManager() *Manager {
 		},
 		authenticator: nil,
 
-		rooms:     make(map[string]Room),
-		roomMutex: sync.RWMutex{},
+		rooms:       make(map[string]Room),
+		roomMutex:   sync.RWMutex{},
 		middlewares: []Middleware{},
 
 		allowedOrigins: []string{},
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)), // no logs
+		logger:         slog.New(slog.NewTextHandler(io.Discard, nil)), // no logs
 	}
 	// create this after manager is already created, so we can inject its logger
 	manager.roomFactory = func(id string) Room {
@@ -68,11 +68,11 @@ func (manager *Manager) SetRoomFactory(factory func(roomID string) Room) {
 	manager.roomFactory = factory
 }
 
-func (manager *Manager) SetAuthenticator(authenticator Authenticator) {
+func (manager *Manager) SetAuthenticator(authenticator RequestAuthenticator) {
 	manager.authenticator = authenticator
 }
 
-func (manager *Manager) SetLogger(logger *slog.Logger){
+func (manager *Manager) SetLogger(logger *slog.Logger) {
 	manager.logger = logger
 }
 
@@ -98,7 +98,7 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 
 	var authState map[string]any
 	if manager.authenticator != nil {
-		
+
 		var authError error
 		authState, authError = manager.authenticator.Authenticate(request)
 		if authError != nil {
@@ -108,10 +108,15 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 			return
 		}
 	}
+
+	clientID := manager.clientIDMethod(request)
+	writer.Header().Set("Op-Comm-Session-ID", clientID)
+
 	options := &websocket.AcceptOptions{}
 	if len(manager.allowedOrigins) > 0 {
 		options.OriginPatterns = manager.allowedOrigins
 	}
+
 	connection, err := websocket.Accept(writer, request, options)
 	if err != nil {
 		manager.logger.Warn("client failed to connect", "error", err)
@@ -119,11 +124,10 @@ func (manager *Manager) HandleWSUpgradeRequest(writer http.ResponseWriter, reque
 	}
 
 	clientCtx, cancel := context.WithCancel(context.Background())
-	clientID := manager.clientIDMethod(request)
 	clientSession := NewSession(clientID, connection, manager, cancel)
 
 	if authState != nil {
-		manager.logger.Debug("client connected with auth state:" , "auth_state", authState)
+		manager.logger.Debug("client connected with auth state:", "auth_state", authState)
 		clientSession.CopyIntoState(authState)
 	}
 	manager.addSession(clientSession)
@@ -140,6 +144,7 @@ func (manager *Manager) UseMiddleware(middleware Middleware) {
 
 // Note: this is NOT threadsafe, this must be used before the Run method
 func (manager *Manager) On(action string, callback EventHandler) {
+	manager.logger.Debug("registered new action", "action", action)
 	manager.handlers[action] = callback
 }
 
@@ -148,40 +153,41 @@ func (manager *Manager) RegisterEventService(namespace string, service EventServ
 	manager.services[namespace] = service
 }
 
-func (manager *Manager) GlobalBroadcast(event protocol.ServerSentEvent) {
-	manager.sessionMutex.RLock()
-	defer manager.sessionMutex.RUnlock()
-		for _, session :=  range manager.sessions {
-			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
-			session.Send(event)
-		}
-}
-
-func(manager *Manager) GlobalBroadcastToOthers(event protocol.ServerSentEvent, senderID string){
+func (manager *Manager) GlobalBroadcast(event protocol.Broadcast) {
+	manager.logger.Debug("global broadcast", "event", event)
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	for _, session := range manager.sessions {
-		if senderID != session.ID{
-			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType, "sender_id", senderID)
+		session.Send(event)
+	}
+}
+
+func (manager *Manager) GlobalBroadcastToOthers(event protocol.Broadcast, senderID string) {
+	manager.logger.Debug("global broadcast from sender", "event", event, "sender_id", senderID)
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+	for _, session := range manager.sessions {
+		if senderID != session.ID {
 			session.Send(event)
 		}
 	}
 
 }
 
-func (manager *Manager) GlobalBroadcastExclude(event protocol.ServerSentEvent, sessionIdsToExclude []string){
+func (manager *Manager) GlobalBroadcastExclude(event protocol.Broadcast, sessionIdsToExclude []string) {
+	manager.logger.Debug("global broadcast exclude", "event", event, "exclude_count", len(sessionIdsToExclude))
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	blackList := internal.SetFromList(sessionIdsToExclude)
 	for _, session := range manager.sessions {
 		if !blackList.Has(session.ID) {
-			manager.logger.Debug("broadcasting event to session", "session_id", session.ID, "event_type", event.EventType)
 			session.Send(event)
 		}
 	}
 }
 
-func (manager *Manager) SendToOnly(event protocol.ServerSentEvent, sessionIds []string) {
+func (manager *Manager) SendToOnly(event protocol.Broadcast, sessionIds []string) {
+	manager.logger.Debug("sending event to sessions", "event", event, "session_count", len(sessionIds))
 	manager.sessionMutex.RLock()
 	defer manager.sessionMutex.RUnlock()
 	for _, id := range sessionIds {
@@ -192,24 +198,28 @@ func (manager *Manager) SendToOnly(event protocol.ServerSentEvent, sessionIds []
 
 }
 
+func (manager *Manager) handleEvent(wrapper SessionEventWrapper) {
 
-func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
+	session := wrapper.Session
+	event := wrapper.Event
 
-	session := wrapper.session
-	event := wrapper.event
+	manager.logger.Debug("handling event", "event", event, "session_id", session.ID)
 
 	for _, middleware := range manager.middlewares {
 		if !middleware(event, session) { // rejected
+			//TODO: possibly add an optional rejection response?
+			manager.logger.Debug("middleware rejected event", "event", event, "session_id", session.ID)
 			return
 		}
 	}
 
-	if handler, exists := manager.handlers[event.EventType]; exists {
+	if handler, exists := manager.handlers[event.Type]; exists {
+		manager.logger.Debug("executing handler for event", "event", event)
 		handler(event, session)
 		return
 	}
 
-	eventType := event.EventType
+	eventType := event.Type
 	typeSplit := strings.SplitN(eventType, ":", 2)
 	if len(typeSplit) < 2 {
 		return
@@ -217,6 +227,7 @@ func (manager *Manager) handleEvent(wrapper sessionEventWrapper) {
 	namespace, action := typeSplit[0], typeSplit[1]
 
 	if service, exists := manager.services[namespace]; exists {
+		manager.logger.Debug("executing service for event", "event", event)
 		service.Handle(action, event, session)
 	}
 }
@@ -275,6 +286,26 @@ func (manager *Manager) sessionCount() int {
 	return len(manager.sessions)
 }
 
+func (manager *Manager) GetSessionIDs() []string {
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+	sessionIDs := make([]string, len(manager.sessions))
+
+	index := 0
+	for id := range manager.sessions {
+		sessionIDs[index] = id
+		index++
+	}
+	return sessionIDs
+
+}
+
+func (manager *Manager) GetSession(id string) *Session {
+	manager.sessionMutex.RLock()
+	defer manager.sessionMutex.RUnlock()
+	return manager.sessions[id]
+}
+
 func (manager *Manager) GetRoom(roomID string) Room {
 	manager.roomMutex.RLock()
 	defer manager.roomMutex.RUnlock()
@@ -287,7 +318,7 @@ func (manager *Manager) GetRoomIDs() []string {
 	roomIDs := make([]string, len(manager.rooms))
 
 	index := 0
-	for id := range manager.rooms{
+	for id := range manager.rooms {
 		roomIDs[index] = id
 		index++
 	}
@@ -309,21 +340,33 @@ func (manager *Manager) CreateRoom(roomID string) Room {
 func (manager *Manager) DeleteRoom(roomID string) {
 	manager.roomMutex.Lock()
 	defer manager.roomMutex.Unlock()
-	delete(manager.rooms, roomID)
-	manager.logger.Debug("deleted room", "room_id", roomID)
+	manager.deleteRoomUnlocked(roomID)
 }
 
 func (manager *Manager) removeSessionFromAllRooms(session *Session) {
-	//TODO: track rooms in session for faster removal
 	manager.roomMutex.Lock()
 	defer manager.roomMutex.Unlock()
 
-	for roomID, room := range manager.rooms {
-		remainingSessionsCount := room.RemoveSession(session)
-		if remainingSessionsCount <= 0 {
-			delete(manager.rooms, roomID)
+	roomIDs := session.GetRooms()
+	for _, roomID := range roomIDs {
+		if room, exists := manager.rooms[roomID]; exists {
+			remainingSessions := room.RemoveSession(session)
+			if remainingSessions <= 0 {
+				manager.deleteRoomUnlocked(roomID)
+			}
 		}
 	}
 }
 
+// Only use when the roomMutex has been locked
+// You should use manager.DeleteRoom unless the roomMutex is already locked
+func (manager *Manager) deleteRoomUnlocked(roomID string) {
+	room, exists := manager.rooms[roomID]
+	if exists {
+		room.Cleanup()
+	}
 
+	delete(manager.rooms, roomID)
+	manager.logger.Debug("deleted room", "room_id", roomID)
+
+}

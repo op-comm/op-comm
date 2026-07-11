@@ -1,8 +1,7 @@
-package server
+package server_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -10,11 +9,13 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/op-comm/op-comm/protocol"
+	"github.com/op-comm/op-comm/server"
+	"github.com/op-comm/op-comm/testutil"
 )
 
 func TestManager_WSRequest(t *testing.T) {
 
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -26,8 +27,8 @@ func TestManager_WSRequest(t *testing.T) {
 
 	expectedSessionCount := 1
 	var actualSessionCount int
-	sessionCountTestPassed := pollEvent(t, 50*time.Millisecond, 10, func() bool {
-		actualSessionCount = manager.sessionCount()
+	sessionCountTestPassed := testutil.PollEvent(t, 50*time.Millisecond, 10, func() bool {
+		actualSessionCount = server.GetManagerSessionCount(manager)
 		return expectedSessionCount == actualSessionCount
 	})
 
@@ -39,67 +40,77 @@ func TestManager_WSRequest(t *testing.T) {
 //TODO: test data lifecycle through manager (from inboundbuffer to socket)
 
 // TODO: add more session management test
-
+//TODO: test that session is removed when socket is closed
 //TODO: add stress test?
 
 func TestManager_HandlesCustomEvent(t *testing.T) {
-	manager, _, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	expectedToBeTrueAfterEvent := false
-	manager.On("toggle", func(event *protocol.ClientSentEvent, session *Session) {
-		expectedToBeTrueAfterEvent = true
+	eventRan := make(chan struct{}, 1)
+	manager.On("toggle", func(event *protocol.Request, session *server.Session) {
+		// Will only ever send one signal (prevents blocking/errors for multiple calls)
+		select {
+		case eventRan <- struct{}{}:
+		default:
+		}
 	})
 
-	data, err := json.Marshal("my custom data")
-	if err != nil {
-		t.Fatalf("Failed to marshal json")
-	}
-	_, cancel := context.WithCancel(context.Background())
-	session := NewSession("123", nil, manager, cancel)
-	manager.handleEvent(sessionEventWrapper{
-		event:   &protocol.ClientSentEvent{EventType: "toggle", Data: data},
-		session: session,
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go manager.Run(ctx)
 
-	if !expectedToBeTrueAfterEvent {
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
+	testutil.WriteToConnection(t, clientConnection, []byte(`
+		{ "type": "toggle" }
+	`))
+
+	select {
+	case <-eventRan:
+		return
+	case <-time.After(1 * time.Second):
 		t.Fatalf("Expected custom event to be ran")
 	}
 }
 
 func TestManager_HandlesCustomService(t *testing.T) {
-	manager, _, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	expectedToBeTrueAfterEvent := false
-
-	customService := EventServiceFunc(func(action string, event *protocol.ClientSentEvent, session *Session) {
+	eventRan := make(chan struct{}, 1)
+	customService := server.EventServiceFunc(func(action string, event *protocol.Request, session *server.Session) {
 		if action == "toggle" {
-			expectedToBeTrueAfterEvent = true
+			select {
+			case eventRan <- struct{}{}:
+			default:
+			}
 		}
 	})
 
 	manager.RegisterEventService("bool", customService)
 
-	data, err := json.Marshal("my custom data")
-	if err != nil {
-		t.Fatalf("Failed to marshal json")
-	}
-	_, cancel := context.WithCancel(context.Background())
-	session := NewSession("123", nil, manager, cancel)
-	manager.handleEvent(sessionEventWrapper{
-		event:   &protocol.ClientSentEvent{EventType: "bool:toggle", Data: data},
-		session: session,
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go manager.Run(ctx)
 
-	if !expectedToBeTrueAfterEvent {
-		t.Fatalf("Expected custom event service to be ran")
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
+
+	testutil.WriteToConnection(t, clientConnection, []byte(`
+		{ "type": "bool:toggle" }
+	`))
+
+	select {
+	case <-eventRan:
+		return
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Expected custom event to be ran")
 	}
+
 }
 
 func TestManager_DeniesUnauthorizedRequest(t *testing.T) {
 
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	manager.SetAuthenticator(rejectAllAuthenticator{})
 	defer cleanup()
 
@@ -120,7 +131,7 @@ func TestManager_DeniesUnauthorizedRequest(t *testing.T) {
 
 func TestManager_AcceptsAuthorizedRequest(t *testing.T) {
 
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	manager.SetAuthenticator(acceptAllAuthenticator{})
 	defer cleanup()
 
@@ -137,8 +148,8 @@ func TestManager_AcceptsAuthorizedRequest(t *testing.T) {
 		t.Fatalf("Expected 101 response status, got %v", response.Status)
 	}
 
-	managerCreatedSession := pollEvent(t, SMALL_DELAY, 5, func() bool {
-		return manager.sessionCount() >= 1
+	managerCreatedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 5, func() bool {
+		return server.GetManagerSessionCount(manager) >= 1
 	})
 	if !managerCreatedSession {
 		t.Fatal("expected session to be created")
@@ -148,7 +159,7 @@ func TestManager_AcceptsAuthorizedRequest(t *testing.T) {
 
 func TestManager_AcceptsWhenNoAuthenticator(t *testing.T) {
 
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
@@ -164,8 +175,8 @@ func TestManager_AcceptsWhenNoAuthenticator(t *testing.T) {
 		t.Fatalf("Expected 101 response status, got %v", response.Status)
 	}
 
-	managerCreatedSession := pollEvent(t, SMALL_DELAY, 5, func() bool {
-		return manager.sessionCount() >= 1
+	managerCreatedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 5, func() bool {
+		return server.GetManagerSessionCount(manager) >= 1
 	})
 	if !managerCreatedSession {
 		t.Fatal("expected session to be created")
@@ -186,69 +197,106 @@ func (_ acceptAllAuthenticator) Authenticate(_ *http.Request) (map[string]any, e
 }
 
 func TestManager_MiddlewareAllowsEvent(t *testing.T) {
-	middlewareRan := false
-	eventRan := false
-	allowMiddleWare := func(event *protocol.ClientSentEvent, session *Session) bool {
-		middlewareRan = true
+	middlewareRan := make(chan struct{}, 1)
+	eventRan := make(chan struct{}, 1)
+
+	allowMiddleware := func(event *protocol.Request, session *server.Session) bool {
+		select {
+		case middlewareRan <- struct{}{}:
+		default:
+		}
 		return true
 	}
 
-	event := func(event *protocol.ClientSentEvent, session *Session) {
-		eventRan = true
+	event := func(event *protocol.Request, session *server.Session) {
+		select {
+		case eventRan <- struct{}{}:
+		default:
+		}
 	}
 
-	manager := NewManager()
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
+	defer cleanup()
 
 	manager.On("test_event", event)
-	manager.UseMiddleware(allowMiddleWare)
+	manager.UseMiddleware(allowMiddleware)
 
-	manager.handleEvent(sessionEventWrapper{
-		session: &Session{},
-		event: &protocol.ClientSentEvent{
-			EventType: "test_event",
-		},
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go manager.Run(ctx)
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
 
-	if !middlewareRan {
+	testutil.WriteToConnection(t, clientConnection, []byte(`
+		{ "type": "test_event" }
+	`))
+
+	select {
+	case <-middlewareRan:
+	case <-time.After(3 * time.Second):
 		t.Fatal("Middleware did not run when expected to")
 	}
 
-	if !eventRan {
+	select {
+	case <-eventRan:
+	case <-time.After(3 * time.Second):
 		t.Fatal("Event did not run when expected to")
 	}
-
 }
 
 func TestManager_MiddlewareDeniesEvent(t *testing.T) {
-	middlewareRan := false
-	eventRan := false
-	allowMiddleWare := func(event *protocol.ClientSentEvent, session *Session) bool {
-		middlewareRan = true
-		return false
+	middlewareRan := make(chan struct{}, 1)
+	eventBuffer := make(chan *protocol.Request, 1)
+
+	denyMiddleware := func(event *protocol.Request, session *server.Session) bool {
+		select {
+		case middlewareRan <- struct{}{}:
+		default:
+		}
+		return event.Type != "denied_event"
 	}
 
-	event := func(event *protocol.ClientSentEvent, session *Session) {
-		eventRan = true
+	eventHandler := func(event *protocol.Request, session *server.Session) {
+		select {
+		case eventBuffer <- event:
+		default:
+		}
 	}
 
-	manager := NewManager()
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
+	defer cleanup()
 
-	manager.On("test_event", event)
-	manager.UseMiddleware(allowMiddleWare)
+	manager.On("denied_event", eventHandler)
+	manager.On("allowed_event", eventHandler)
+	manager.UseMiddleware(denyMiddleware)
 
-	manager.handleEvent(sessionEventWrapper{
-		session: &Session{},
-		event: &protocol.ClientSentEvent{
-			EventType: "test_event",
-		},
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go manager.Run(ctx)
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
 
-	if !middlewareRan {
-		t.Fatal("Middleware did not run when expected to.")
+	testutil.WriteToConnection(t, clientConnection, []byte(`
+		{ "type": "denied_event" }
+	`))
+
+	testutil.WriteToConnection(t, clientConnection, []byte(`
+		{ "type": "allowed_event" }
+	`))
+	select {
+	case <-middlewareRan:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Middleware did not run when expected to")
 	}
 
-	if eventRan {
-		t.Fatal("Event ran when not expected to.")
+	select {
+	case eventThatRan := <-eventBuffer:
+		if eventThatRan.Type == "denied_event" {
+			t.Fatalf("Event ran when expected not to")
+		}
+		if eventThatRan.Type != "allowed_event" {
+			t.Fatalf("allowed_event did not run when expected to")
+		}
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Expected allowed_event to run, did not run within duration")
 	}
 
 }

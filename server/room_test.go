@@ -1,20 +1,24 @@
-package server
+package server_test
 
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/op-comm/op-comm/protocol"
+	"github.com/op-comm/op-comm/server"
+	"github.com/op-comm/op-comm/testutil"
 )
 
 func TestRoom_IsRemovedWhenLastSessionIsRemoved(t *testing.T) {
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	_, session := connectAndFetchSession(t, manager, wsURL, []string{})
+	_, session := testutil.ConnectToServer(t, manager, wsURL)
 
 	room := manager.CreateRoom("test_room")
 
@@ -24,9 +28,9 @@ func TestRoom_IsRemovedWhenLastSessionIsRemoved(t *testing.T) {
 		t.Fatal("Failed to create room")
 	}
 
-	manager.removeSessionFromAllRooms(session)
+	session.Close(websocket.StatusNormalClosure, "")
 
-	roomDeleted := pollEvent(t, SMALL_DELAY, 10, func() bool {
+	roomDeleted := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
 		return manager.GetRoom("test_room") == nil
 	})
 
@@ -36,11 +40,11 @@ func TestRoom_IsRemovedWhenLastSessionIsRemoved(t *testing.T) {
 }
 
 func TestRoom_IsNotRemovedWhenAnotherSessionRemains(t *testing.T) {
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	_, session := connectAndFetchSession(t, manager, wsURL, []string{})
-	_, session2 := connectAndFetchSession(t, manager, wsURL, []string{session.ID})
+	_, session := testutil.ConnectToServer(t, manager, wsURL)
+	_, session2 := testutil.ConnectToServer(t, manager, wsURL)
 
 	room := manager.CreateRoom("test_room")
 
@@ -51,9 +55,9 @@ func TestRoom_IsNotRemovedWhenAnotherSessionRemains(t *testing.T) {
 		t.Fatal("Failed to create room")
 	}
 
-	manager.removeSessionFromAllRooms(session)
+	server.RemoveSessionFromAllManagerRooms(manager, session)
 
-	roomDeleted := pollEvent(t, SMALL_DELAY, 10, func() bool {
+	roomDeleted := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
 		return manager.GetRoom("test_room") == nil
 	})
 
@@ -64,8 +68,11 @@ func TestRoom_IsNotRemovedWhenAnotherSessionRemains(t *testing.T) {
 }
 
 func TestRoom_BroadcastReachesAllSessions(t *testing.T) {
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
+
+	//ignore for this test
+	manager.SetLogger(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{})))
 
 	// a room created with zero sessions should still exist because it was manually created
 	// (deleting this room should be handled by the application)
@@ -78,19 +85,19 @@ func TestRoom_BroadcastReachesAllSessions(t *testing.T) {
 	existingIds := []string{}
 	clientConnections := []*websocket.Conn{}
 	for range SESSION_COUNT {
-		connection, session := connectAndFetchSession(t, manager, wsURL, existingIds)
+		connection, session := testutil.ConnectToServer(t, manager, wsURL)
+		defer connection.Close(websocket.StatusNormalClosure, "")
 		existingIds = append(existingIds, session.ID)
 		clientConnections = append(clientConnections, connection)
 		room.AddSession(session)
 	}
 
-	expectedEvent := protocol.ServerSentEvent{
-		EventType: "room:test",
-		Data:      []byte(`"test data"`),
+	expectedEvent := protocol.Broadcast{
+		Type: "room:test",
 	}
 	room.Broadcast(expectedEvent)
 
-	var event protocol.ServerSentEvent
+	var event protocol.Broadcast
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
@@ -104,18 +111,21 @@ func TestRoom_BroadcastReachesAllSessions(t *testing.T) {
 			t.Fatalf("Failed to unmarshal json: %v", unmarshalErr)
 		}
 
-		if event.EventType != expectedEvent.EventType {
-			t.Fatalf("Recieved Event does not match expected event: expected %s, got %s", expectedEvent.EventType, event.EventType)
+		if event.Type != expectedEvent.Type {
+			t.Fatalf("Recieved Event does not match expected event: expected %s, got %s", expectedEvent.Type, event.Type)
 		}
 	}
 
 }
 
 func TestRoom_BroadcastToSlowClientCausesDisconnect(t *testing.T) {
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	_, session := connectAndFetchSession(t, manager, wsURL, []string{})
+	//ignore for this test
+	manager.SetLogger(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{})))
+
+	_, session := testutil.ConnectToServer(t, manager, wsURL)
 
 	room := manager.CreateRoom("test_room")
 
@@ -125,19 +135,20 @@ func TestRoom_BroadcastToSlowClientCausesDisconnect(t *testing.T) {
 		t.Fatal("Failed to create room")
 	}
 
-	event := protocol.ServerSentEvent{
-		EventType: "test:spam",
-		Data:      []byte(`"data"`),
+	event := protocol.Broadcast{
+		Type: "test:spam",
+		Data: []byte(`"data"`),
 	}
 	// this number needs to exceed the buffer size
 	for range 1000 {
 		room.Broadcast(event)
 	}
 
-	sessionWasRemoved := pollEvent(t, SMALL_DELAY, 10, func() bool {
-		manager.sessionMutex.RLock()
-		defer manager.sessionMutex.RUnlock()
-		_, exists := manager.sessions[session.ID]
+	sessionWasRemoved := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
+		sessionMutex := server.GetManagerSessionMutex(manager)
+		sessionMutex.RLock()
+		defer sessionMutex.RUnlock()
+		_, exists := server.GetManagerSessionMap(manager)[session.ID]
 		return !exists
 	})
 

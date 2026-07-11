@@ -1,27 +1,27 @@
-package server
+package server_test
 
 import (
 	"context"
 	"encoding/json"
-	"slices"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/op-comm/op-comm/protocol"
+	"github.com/op-comm/op-comm/server"
+	"github.com/op-comm/op-comm/testutil"
 )
 
-var TEST_WRITE_TIMEOUT time.Duration = 5 * time.Second
-var TEST_READ_TIMEOUT time.Duration = 5 * time.Second
-
 func TestSession_Close(t *testing.T) {
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	ctx := context.Background()
-	connection, session := connectAndFetchSession(t, manager, wsURL, []string{})
+	ctx, cancel := context.WithTimeout(context.Background(), testutil.TEST_READ_TIMEOUT)
+	defer cancel()
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
 	go session.Close(websocket.StatusNormalClosure, "session closed")
 
-	_, _, readErr := connection.Read(ctx)
+	_, _, readErr := clientConnection.Read(ctx)
 	if readErr == nil {
 		t.Fatal("Expected websocket read to fail")
 	}
@@ -33,88 +33,69 @@ func TestSession_Close(t *testing.T) {
 }
 
 func TestSession_ReadPumpForwardsDataToManager(t *testing.T) {
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-
-	connection, _ := connectAndFetchSession(t, manager, wsURL, []string{})
-	defer connection.Close(websocket.StatusNormalClosure, "")
-
-	ctx, cancel := context.WithTimeout(context.Background(), TEST_WRITE_TIMEOUT)
+	clientConnection, _ := testutil.ConnectToServer(t, manager, wsURL)
+	defer clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	expectedType := "test:data"
-	clientEvent := protocol.ClientSentEvent{
-		EventType: expectedType,
-		Data:      []byte(`"Data"`),
-	}
-	data, marshalErr := json.Marshal(clientEvent)
-	if marshalErr != nil {
-		t.Fatalf("Unexpected Test error: Failed to marshal json: %v", marshalErr)
-	}
-	connection.Write(ctx, websocket.MessageText, data)
-	cancel()
+	byteData := []byte(fmt.Sprintf(`{"type": %q}`, expectedType))
+	testutil.WriteToConnection(t, clientConnection, byteData)
 
-	var receivedData sessionEventWrapper
-	dataIsInBuffer := pollEvent(t, SMALL_DELAY, 10, func() bool {
-		select {
-		case receivedData = <-manager.InboundBuffer:
-			return true
-		default:
-			return false
+	select {
+	case receivedData := <-manager.InboundBuffer:
+		if receivedData.Event.Type != expectedType {
+			t.Fatalf("Expected eventType to be %v, got %v", expectedType, receivedData.Event.Type)
 		}
-	})
-	if !dataIsInBuffer {
-		t.Fatalf("Expected data to be forwarded to Manager's InboundBuffer, but it never reached")
-	}
-
-	if receivedData.event.EventType != expectedType {
-		t.Fatalf("Expected eventType to be %v, got %v", expectedType, receivedData.event.EventType)
+	case <-time.After(1 * time.Second):
+		t.Fatalf("Expected manager's Inbound buffer to contain written data")
 	}
 }
 
-func TestSession_WritePumpSendsDataToClient(t *testing.T) {
-	manager, wsURL, cleanup := setupTestServer(t)
+func TestSession_WritePumpSendsDataToSocket(t *testing.T) {
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
 
-	connection, session := connectAndFetchSession(t, manager, wsURL, []string{})
-	defer connection.Close(websocket.StatusNormalClosure, "")
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
+	defer clientConnection.Close(websocket.StatusNormalClosure, "")
 
 	expectedType := "test:data"
-	serverEvent := protocol.ServerSentEvent{
-		EventType: expectedType,
-		Data:      []byte(`"Data"`),
+	serverEvent := protocol.Response{
+		Type: expectedType,
 	}
-	session.OutputBuffer <- serverEvent
+	session.Send(serverEvent)
 
-	readCtx, cancel := context.WithTimeout(context.Background(), TEST_READ_TIMEOUT)
+	readCtx, cancel := context.WithTimeout(context.Background(), testutil.TEST_READ_TIMEOUT)
 	defer cancel()
-	_, data, readErr := connection.Read(readCtx)
+	_, data, readErr := clientConnection.Read(readCtx)
 
 	if readErr != nil {
 		t.Fatalf("Unexpected Read Error: expected successful read operation")
 	}
 
-	var event protocol.ServerSentEvent
+	var event protocol.Response
 	jsonErr := json.Unmarshal(data, &event)
 
 	if jsonErr != nil {
 		t.Fatalf("Unexpected JSON Error: expected json.Unmarshal to have no errors")
 	}
 
-	if event.EventType != expectedType {
-		t.Fatalf("Expected eventType to be %v, got %v", expectedType, event.EventType)
+	if event.Type != expectedType {
+		t.Fatalf("Expected eventType to be %v, got %v", expectedType, event.Type)
 	}
 }
 
 func TestSession_IsRemovedFromManagerOnSocketClose(t *testing.T) {
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	connection, session := connectAndFetchSession(t, manager, wsURL, []string{})
-	connection.Close(websocket.StatusNormalClosure, "")
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
+	clientConnection.Close(websocket.StatusNormalClosure, "")
 
-	managerDeletedSession := pollEvent(t, SMALL_DELAY, 10, func() bool {
-		manager.sessionMutex.RLock()
-		defer manager.sessionMutex.RUnlock()
-		_, exists := manager.sessions[session.ID]
+	managerDeletedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
+		sessionMutex := server.GetManagerSessionMutex(manager)
+		sessionMutex.RLock()
+		defer sessionMutex.RUnlock()
+		_, exists := server.GetManagerSessionMap(manager)[session.ID]
 		return !exists
 	})
 
@@ -126,38 +107,31 @@ func TestSession_IsRemovedFromManagerOnSocketClose(t *testing.T) {
 
 func TestSession_IgnoresInvalidJSON(t *testing.T) {
 
-	manager, wsURL, cleanup := setupTestServer(t)
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
 	defer cleanup()
-	connection, session := connectAndFetchSession(t, manager, wsURL, []string{})
-	defer connection.Close(websocket.StatusNormalClosure, "")
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
+	defer clientConnection.Close(websocket.StatusNormalClosure, "")
 
-	inputData, jsonErr := json.Marshal(`"Data"`)
-	if jsonErr != nil {
-		t.Fatalf("Unexpected json Marshal error: %v", jsonErr)
-	}
+	testutil.WriteToConnection(t, clientConnection, []byte(`"Data"`))
 
-	writeCtx, cancel := context.WithTimeout(context.Background(), TEST_WRITE_TIMEOUT)
-	connection.Write(writeCtx, websocket.MessageText, inputData)
-	cancel()
+	expectedType := "valid_data"
+	testutil.WriteToConnection(t, clientConnection, []byte(fmt.Sprintf(`{"type": %q}`, expectedType)))
 
-	dataReachedManagerBuffer := pollEvent(t, SMALL_DELAY, 10, func() bool {
-		select {
-		case <-manager.InboundBuffer:
-			return true
-		default:
-			return false
+	select {
+	case wrapper := <-manager.InboundBuffer:
+		if wrapper.Event.Type != expectedType {
+			t.Fatalf("expected the first event in manager buffer to have type %v got %v", expectedType, wrapper.Event.Type)
 		}
-	})
-
-	if dataReachedManagerBuffer {
-		t.Fatal("Session Error: Invalid Data reached manager.")
+	case <-time.After(1 * time.Second):
+		t.Fatalf("expected valid data to be passed to manager")
 	}
 
 	//  this is checked to ensure user is not kicked on invalid data.
-	managerDeletedSession := pollEvent(t, SMALL_DELAY, 10, func() bool {
-		manager.sessionMutex.RLock()
-		defer manager.sessionMutex.RUnlock()
-		_, exists := manager.sessions[session.ID]
+	managerDeletedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
+		sessionMutex := server.GetManagerSessionMutex(manager)
+		sessionMutex.RLock()
+		defer sessionMutex.RUnlock()
+		_, exists := server.GetManagerSessionMap(manager)[session.ID]
 		return !exists
 	})
 
@@ -167,30 +141,27 @@ func TestSession_IgnoresInvalidJSON(t *testing.T) {
 
 }
 
-func connectAndFetchSession(t *testing.T, manager *Manager, wsURL string, existingIds []string) (*websocket.Conn, *Session) {
-	ctx := context.Background()
-	clientConn, _, err := websocket.Dial(ctx, wsURL, nil)
-	if err != nil {
-		t.Fatalf("Unexpected Server Error: Failed to connect to ws: %v", err)
+func TestSession_IsRemovedWhenBufferFull(t *testing.T) {
+	manager, wsURL, cleanup := testutil.SetupTestServer(t)
+	defer cleanup()
+
+	clientConnection, session := testutil.ConnectToServer(t, manager, wsURL)
+	defer clientConnection.Close(websocket.StatusNormalClosure, "")
+
+	//this needs to exceed buffer size
+	for range 1000 {
+		session.Send(protocol.Response{})
 	}
 
-	var serverSession *Session
-	managerCreatedSession := pollEvent(t, SMALL_DELAY, 10, func() bool {
-		manager.sessionMutex.RLock()
-		defer manager.sessionMutex.RUnlock()
-		for _, s := range manager.sessions {
-			if slices.Contains(existingIds, s.ID) {
-				continue
-			}
-			serverSession = s
-			return true
-		}
-		return false
+	managerDeletedSession := testutil.PollEvent(t, testutil.SMALL_DELAY, 10, func() bool {
+		sessionMutex := server.GetManagerSessionMutex(manager)
+		sessionMutex.RLock()
+		defer sessionMutex.RUnlock()
+		_, exists := server.GetManagerSessionMap(manager)[session.ID]
+		return !exists
 	})
 
-	if !managerCreatedSession {
-		t.Fatal("Server failed to create session in time")
+	if !managerDeletedSession {
+		t.Fatalf("Expected session to be removed from session map of manager. Session was not removed.")
 	}
-
-	return clientConn, serverSession
 }
