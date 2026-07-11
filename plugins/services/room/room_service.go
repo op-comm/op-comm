@@ -68,21 +68,35 @@ func NewRoomService(manager *server.Manager, serviceOptions ...RoomOption) (*Roo
 
 func (service *RoomService) Handle(action string, event *protocol.ClientSentEvent, session *server.Session) {
 
-	if len(event.Data) == 0 && action != "list" {
-		session.Reply(event, nil, "Missing payload")
+	if Command(action) == CommandList {
+		if authorizeErr := service.Authorizer.Authorize(session, nil, action); authorizeErr != nil {
+			session.Reply(event, nil, fmt.Sprintf("Unauthorized: %v", authorizeErr))
+			return
+		}
+		session.Reply(event, RoomListResponse{Rooms: service.Manager.GetRoomIDs()}, "")
 		return
 	}
 
-	var requestData BaseRoomRequest
+	emptyPayload := len(event.Data) == 0
+	if emptyPayload {
+		session.Reply(event, nil, string(ErrMissingPayload))
+		return
+	}
+
+	var requestData struct {
+		RoomID string `json:"room_id"`
+	}
+
 	if jsonErr := json.Unmarshal(event.Data, &requestData); jsonErr != nil {
-		session.Reply(event, nil, "Invalid JSON payload")
+		session.Reply(event, nil, string(ErrInvalidJSON))
 		return
 	}
-	roomID := requestData.RoomID
 
+	roomID := requestData.RoomID
 	room := service.Manager.GetRoom(requestData.RoomID)
-	if room == nil && action != "create" {
-		session.Reply(event, nil, "Room does not exist")
+
+	if room == nil && Command(action) != CommandCreate {
+		session.Reply(event, nil, string(ErrRoomNotFound))
 		return
 	}
 
@@ -92,70 +106,63 @@ func (service *RoomService) Handle(action string, event *protocol.ClientSentEven
 		return
 	}
 
-	// custom actions have priority, allows to override our defaults
+	// custom actions have priority, and are handlers on the room object
+	// so overriding list action does not work.
 	handler, exists := service.Handlers[action]
 	if exists {
 		handler(room, event, session)
 		return
 	}
 
-	switch action {
-	case "list":
-		session.Reply(event, RoomListReply{
-			Rooms: service.Manager.GetRoomIDs(),
-		}, "")
-	case "create":
+	switch Command(action) {
+
+	case CommandList:
+		session.Reply(event, RoomListResponse{Rooms: service.Manager.GetRoomIDs()}, "")
+
+	case CommandCreate:
 		room = service.Manager.CreateRoom(roomID)
 		room.AddSession(session)
 		service.Manager.GlobalBroadcastToOthers(protocol.ServerSentEvent{
-			EventType: "room:created",
-			Data: BaseRoomBroadcast{
+			EventType: string(EventRoomCreated),
+			Data: RoomCreatedBroadcast{
 				RoomID: roomID,
 			},
 		}, session.ID)
-		session.Reply(event, BaseRoomReply{
-			RoomID: roomID,
-		}, "")
-	case "delete":
+		session.Reply(event, RoomCreateResponse{RoomID: roomID}, "")
+	case CommandDelete:
 		service.Manager.DeleteRoom(roomID)
 		room.BroadcastToOthers(protocol.ServerSentEvent{
-			EventType: "room:deleted",
-			Data: BaseRoomBroadcast{
+			EventType: string(EventRoomDeleted),
+			Data: RoomDeletedBroadcast{
 				RoomID: roomID,
 			},
 		}, session.ID)
 
-		session.Reply(event, BaseRoomReply{
-			RoomID: roomID,
-		}, "")
+		session.Reply(event, RoomDeleteResponse{RoomID: roomID}, "")
 
-	case "join":
+	case CommandJoin:
 		room.AddSession(session)
 		room.BroadcastToOthers(protocol.ServerSentEvent{
-			EventType: "room:user_joined",
-			Data: BaseRoomBroadcast{
+			EventType: string(EventUserJoined),
+			Data: RoomUserJoinedBroadcast{
 				RoomID: roomID,
 				UserID: session.ID,
 			},
 		}, session.ID)
 
-		session.Reply(event, BaseRoomReply{
-			RoomID: roomID,
-		}, "")
+		session.Reply(event, RoomJoinResponse{RoomID: roomID}, "")
 
-	case "leave":
+	case CommandLeave:
 		room.RemoveSession(session)
 		room.BroadcastToOthers(protocol.ServerSentEvent{
-			EventType: "room:user_left",
-			Data: BaseRoomBroadcast{
+			EventType: string(EventUserLeft),
+			Data: RoomUserLeftBroadcast{
 				RoomID: roomID,
 				UserID: session.ID,
 			},
 		}, session.ID)
 
-		session.Reply(event, BaseRoomReply{
-			RoomID: roomID,
-		}, "")
+		session.Reply(event, RoomLeaveResponse{RoomID: roomID}, "")
 	default:
 		session.Reply(event, nil, fmt.Sprintf("Unknown action: %s", action))
 	}

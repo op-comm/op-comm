@@ -46,8 +46,8 @@ func TestRoomService_ListsAllRooms(t *testing.T) {
 	}
 
 	var response struct {
-		EventType string        `json:"type"`
-		Data      RoomListReply `json:"data"`
+		EventType string           `json:"type"`
+		Data      RoomListResponse `json:"data"`
 	}
 
 	jsonErr := json.Unmarshal(data, &response)
@@ -93,8 +93,8 @@ func TestRoomService_CreatesRoomOnRequest(t *testing.T) {
 	}
 
 	var response struct {
-		EventType string        `json:"type"`
-		Data      BaseRoomReply `json:"data"`
+		EventType string             `json:"type"`
+		Data      RoomCreateResponse `json:"data"`
 	}
 	jsonErr := json.Unmarshal(data, &response)
 
@@ -202,8 +202,8 @@ func TestRoomService_BroadcastsToRoomWhenUserLeaves(t *testing.T) {
 
 	data := testutil.WaitForEvent(t, connectionInRoom, expectedType)
 	var response struct {
-		EventType string            `json:"type"`
-		Data      BaseRoomBroadcast `json:"data"`
+		EventType string                `json:"type"`
+		Data      RoomUserLeftBroadcast `json:"data"`
 	}
 	jsonErr := json.Unmarshal(data, &response)
 	if jsonErr != nil {
@@ -259,8 +259,8 @@ func TestRoomService_BroadcastsToRoomWhenUserJoins(t *testing.T) {
 	data := testutil.WaitForEvent(t, connectionInRoom, expectedType)
 
 	var response struct {
-		EventType string            `json:"type"`
-		Data      BaseRoomBroadcast `json:"data"`
+		EventType string                  `json:"type"`
+		Data      RoomUserJoinedBroadcast `json:"data"`
 	}
 	jsonErr := json.Unmarshal(data, &response)
 	if jsonErr != nil {

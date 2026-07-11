@@ -114,7 +114,7 @@ func ReadFromConnection(t *testing.T, connection *websocket.Conn) []byte {
 	return data
 }
 
-// flushes the buffer up to the target event and returns the data for target event. Errors if no type exists in the buffer
+// flushes the buffer up to the target event and returns the data for target event. Errors if no event with type exists in the buffer
 func WaitForEvent(t *testing.T, connection *websocket.Conn, targetType string) []byte {
 	t.Helper()
 	for {
