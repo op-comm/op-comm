@@ -17,7 +17,6 @@ import (
 // because if the server places X events without the client reading from it in time,
 // it's likely a network issue and the session should be removed
 var MAX_BUFFER_EVENTS_BEFORE_DISCONNECT int = 512
-
 var WRITE_TIMEOUT = 10 * time.Second
 
 type SessionEventWrapper struct {
