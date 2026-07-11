@@ -118,7 +118,7 @@ func ReadFromConnection(t *testing.T, connection *websocket.Conn) []byte {
 func WaitForEvent(t *testing.T, connection *websocket.Conn, targetType string) []byte {
 	t.Helper()
 	for {
-		readCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		readCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 		defer cancel()
 		_, data, readErr := connection.Read(readCtx)
 

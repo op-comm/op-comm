@@ -176,6 +176,8 @@ func TestRoomService_BroadcastsToRoomWhenUserLeaves(t *testing.T) {
 	}
 	`))
 
+	testutil.WaitForEvent(t, connectionToLeave, "room:join:response")
+
 	connectionInRoom, _ := testutil.ConnectToServer(t, manager, wsURL)
 
 	t.Logf("%v", session.ID)
@@ -187,6 +189,8 @@ func TestRoomService_BroadcastsToRoomWhenUserLeaves(t *testing.T) {
 		}
 	}
 	`))
+
+	testutil.WaitForEvent(t, connectionInRoom, "room:join:response")
 
 	testutil.WriteToConnection(t, connectionToLeave, []byte(`
 	{ 
