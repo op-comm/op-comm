@@ -17,6 +17,7 @@ import (
 // because if the server places X events without the client reading from it in time,
 // it's likely a network issue and the session should be removed
 var MAX_BUFFER_EVENTS_BEFORE_DISCONNECT int = 512
+var MAX_BYTES_PER_MESSAGE int64 = 4096 // 4 kilobytes
 var WRITE_TIMEOUT = 10 * time.Second
 
 type SessionEventWrapper struct {
@@ -62,6 +63,8 @@ func (session *Session) readPump() {
 	// we don't need to attempt to close after our loop because the socket closing causes the loop to break
 	// in the first place
 	defer session.Cleanup()
+
+	session.connection.SetReadLimit(MAX_BYTES_PER_MESSAGE)
 
 	for {
 
